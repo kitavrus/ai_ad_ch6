@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  routerai-client:
+    build: .
+    container_name: routerai-client
+    stdin_open: true  # Keep stdin open for interactive input
+    tty: true         # Allocate a pseudo-TTY
+    environment:
+      - ROUTERAPI_API_KEY=${ROUTERAPI_API_KEY}
+    # For development with hot reload (optional):
+    # volumes:
+    #   - .:/app
+    #   - /app/routerai-client  # Avoid overwriting binary
+    # command: go run main.go
+    restart: 'no'
+
+# Note: This application requires interactive input.
+# To run with docker-compose, use:
+#   docker-compose run --rm routerai-client
+# 
+# Or set the API key in .env file and run:
+#   docker-compose up

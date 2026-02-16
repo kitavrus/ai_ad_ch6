@@ -1,5 +1,5 @@
-
 package main
+
 import (
 	"bufio"
 	"context"
@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strings"
+
 	"github.com/sashabaranov/go-openai"
 )
 
