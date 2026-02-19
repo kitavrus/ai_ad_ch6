@@ -1,86 +1,105 @@
 from openai import OpenAI
+import os
 
 # === НАСТРОЙКИ ===
-API_KEY = ""
+# Базовый URL API
 BASE_URL = "https://routerai.ru/api/v1"
+# API ключ для авторизации
+API_KEY = os.getenv("API_KEY")
 
-# Модель
-#MODEL = "openai/gpt-4o"
+# === Параметры модели ===
+# Модель для генерации (выбранная модель)
 MODEL = "deepseek/deepseek-v3.2"
-
-# Системный промпт (если не нужен — оставьте пустой строкой)
-SYSTEM_PROMPT = "Ты полезный ассистент."
-
-# Основной промпт пользователя
-USER_PROMPT = "Привет! продолжи текст после слова стоп1, повтори что я тут написал"
-
-# Модификатор, добавляемый к промпту пользователя
-PROMPT_MODIFIER = "Ответь кратко. Да или Нет"
-
-# Явное описание формата ответа (будет добавлено к системному промпту или отдельным сообщением)
-FORMAT_DESCRIPTION = "Ответ должен быть в формате JSON с полями 'answer' и 'confidence'."
-
-# Инструкция по завершению ответа (например, "Закончи ответ словом 'КОНЕЦ'.")
-COMPLETION_INSTRUCTION = ""
-
-# Стоп-последовательности (через запятую). Если не нужны — оставьте пустым.
-STOP_SEQUENCES = "стоп1, стоп2, стоп3"
-
-# Ограничение на длину ответа (в токенах)
+# Максимальное количество токенов в ответе
 MAX_TOKENS = 150
-
-# Температура (0-2)
+# Температура генерации (уровень случайности, 0-2)
 TEMPERATURE = 0.7
-
-# Top_p (0-1)
+# Top-p: вероятность влияния на выбор следующего токена (0-1)
 TOP_P = 0.9
-
-# Top_k (целое число, поддерживается не всеми API)
+# Top-k: ограничение по количеству кандидатов
 TOP_K = 50
 
-# === ПОДГОТОВКА ДАННЫХ ===
-# Разбираем стоп-последовательности в список
-stop_list = [s.strip() for s in STOP_SEQUENCES.split(",")] if STOP_SEQUENCES else None
+# === Параметры промптов ===
+# Системный промпт, задающий контекст ассистента
+SYSTEM_PROMPT = "Ты полезный ассистент."
+# Основной пользовательский промпт (начало беседы)
+USER_PROMPT = "Привет! продолжи текст после слова стоп1, повтори что я тут написал"
+# Модификатор к промпту, добавляющий инструкции к сообщению пользователя
+PROMPT_MODIFIER = "Ответь кратко. Да или Нет"
+# Описание формата ответа, добавляемое к промпту (например, JSON с полями)
+FORMAT_DESCRIPTION = "Ответ должен быть в формате JSON с полями 'answer' и 'confidence'."
+# Инструкция по завершению ответа
+COMPLETION_INSTRUCTION = ""
+# Стоп-последовательности (массив строк), определяющие прекращение генерации
+STOP_SEQUENCES = ["стоп1", "стоп2", "стоп3"]
 
-# Формируем сообщения
-messages = []
 
-# Добавляем системный промпт (если есть)
-system_content = SYSTEM_PROMPT
-if FORMAT_DESCRIPTION:
+def build_messages():
+    """Формирует список сообщений для API."""
+    messages = []
+
+    system_content = SYSTEM_PROMPT
+    if FORMAT_DESCRIPTION:
+        system_content = f"{system_content}\n\n{FORMAT_DESCRIPTION}" if system_content else FORMAT_DESCRIPTION
+
     if system_content:
-        system_content += "\n\n" + FORMAT_DESCRIPTION
-    else:
-        system_content = FORMAT_DESCRIPTION
-if system_content:
-    messages.append({"role": "system", "content": system_content})
+        messages.append({"role": "system", "content": system_content})
 
-# Добавляем инструкцию по завершению в промпт пользователя, если она задана
-user_content = USER_PROMPT
-if PROMPT_MODIFIER:
-    user_content += PROMPT_MODIFIER
-if COMPLETION_INSTRUCTION:
-    user_content += "\n\n" + COMPLETION_INSTRUCTION
+    user_content = USER_PROMPT
+    if PROMPT_MODIFIER:
+        user_content += PROMPT_MODIFIER
+    if COMPLETION_INSTRUCTION:
+        user_content += f"\n\n{COMPLETION_INSTRUCTION}"
 
-messages.append({"role": "user", "content": user_content})
+    messages.append({"role": "user", "content": user_content})
 
-# === СОЗДАНИЕ КЛИЕНТА ===
-client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
+    return messages
 
-# === ВЫПОЛНЕНИЕ ЗАПРОСА ===
-extra_params = {}
-if TOP_K is not None:
-    extra_params["top_k"] = TOP_K
 
-response = client.chat.completions.create(
-    model=MODEL,
-    messages=messages,
-    max_tokens=MAX_TOKENS,
-    temperature=TEMPERATURE,
-    top_p=TOP_P,
-    stop=stop_list,
-    extra_body=extra_params if extra_params else None
-)
+def get_extra_params():
+    """Возвращает дополнительные параметры для API."""
+    return {"top_k": TOP_K} if TOP_K is not None else None
 
-# === ВЫВОД РЕЗУЛЬТАТА ===
-print(response.choices[0].message.content)
+
+def print_api_params(messages, stop_list):
+    """Выводит параметры API-запроса."""
+    print("API CALL ARGS (sanitized):")
+    print(f"  Model: {MODEL}")
+    print(f"  Max tokens: {MAX_TOKENS}")
+    print(f"  Temperature: {TEMPERATURE}")
+    print(f"  Top-p: {TOP_P}")
+    print(f"  Top-k: {TOP_K}")
+    print(f"  Stop sequences: {stop_list}")
+    print(f"  Messages count: {len(messages)}")
+    print("  Messages preview:")
+    for i, msg in enumerate(messages, 1):
+        print(f"    Message {i}: role='{msg.get('role')}', content length={len(msg.get('content', ''))}")
+
+
+def main():
+    if not API_KEY:
+        raise SystemExit("API_KEY environment variable is not set.")
+
+    messages = build_messages()
+    stop_list = [s.strip() for s in STOP_SEQUENCES] if STOP_SEQUENCES else None
+    extra_params = get_extra_params()
+
+    client = OpenAI(api_key=API_KEY, base_url=BASE_URL)
+
+    response = client.chat.completions.create(
+        model=MODEL,
+        messages=messages,
+        max_tokens=MAX_TOKENS,
+        temperature=TEMPERATURE,
+        top_p=TOP_P,
+        stop=stop_list,
+        extra_body=extra_params
+    )
+
+    print_api_params(messages, stop_list)
+    print()
+    print(response.choices[0].message.content)
+
+
+if __name__ == "__main__":
+    main()
