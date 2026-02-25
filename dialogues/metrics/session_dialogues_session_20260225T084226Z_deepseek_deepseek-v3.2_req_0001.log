@@ -1,0 +1,12 @@
+{
+  "model": "deepseek/deepseek-v3.2",
+  "endpoint": "chat",
+  "temp": 0.7,
+  "ttft": 2.7547882920000006,
+  "req_time": 2.7547882920000006,
+  "total_time": 69.07633423805237,
+  "tokens": 191,
+  "p_tokens": 140,
+  "c_tokens": 51,
+  "cost_rub": 0.028650000000000002
+}
