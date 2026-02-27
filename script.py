@@ -31,7 +31,8 @@ API_KEY = os.getenv("API_KEY")
 # API error: Error code: 503 - {'error': "Provider error (status: 400): This endpoint's maximum context length is 32768 tokens.
 # However, you requested about 34497 tokens (34497 of text input)."}
 #DEFAULT_MODEL = "qwen/qwen2.5-coder-7b-instruct"
-DEFAULT_MODEL = "deepseek/deepseek-chat-v3.1" #
+#DEFAULT_MODEL = "deepseek/deepseek-chat-v3.1" #
+DEFAULT_MODEL = "inception/mercury-coder" #
 DEFAULT_MAX_TOKENS = None
 DEFAULT_TEMPERATURE = 0.7
 DEFAULT_TOP_P = 0.9
@@ -40,6 +41,10 @@ DEFAULT_TOP_K = 50
 # Стоимость токенов
 USD_PER_1K_TOKENS = 0.0015
 RUB_PER_USD = 100.0
+
+# Управление контекстом
+CONTEXT_RECENT_MESSAGES = 10   # сколько последних сообщений держим "как есть"
+CONTEXT_SUMMARY_INTERVAL = 10  # каждые N сообщений делаем summary старых
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +98,7 @@ def _parse_inline_command(line: str) -> dict:
       /system-prompt Новый системный промпт
       /initial-prompt Начальное сообщение
       /resume true|false
+      /showsummary            — показать текущее резюме контекста
 
     Возвращает словарь обновлений для применения к текущей сессии.
     Ключи нормализованы в стиль Python (подчёркивания).
@@ -148,6 +154,8 @@ def _parse_inline_command(line: str) -> dict:
         updates["initial_prompt"] = value
     elif key == "resume":
         updates["resume"] = value.lower() in {"true", "1", "yes", "on"}
+    elif key == "showsummary":
+        updates["showsummary"] = True
     # Неизвестные ключи игнорируются
     return updates
 
@@ -267,6 +275,7 @@ def _apply_updates(
     session_id_metrics: str,
     dialogue_start_time: float,
     duration: float,
+    context_summary: str,
 ) -> dict:
     """Применяет inline-команды к текущей конфигурации сессии.
 
@@ -289,6 +298,8 @@ def _apply_updates(
         "total_tokens": 0,
         "total_prompt_tokens": 0,
         "total_completion_tokens": 0,
+        "context_summary": context_summary,
+        "showsummary": False,
     }
 
     for k, v in updates.items():
@@ -336,12 +347,15 @@ def _apply_updates(
                     initial_prompt=state["initial_prompt"],
                 )
                 state.update(session_data)
+                state["context_summary"] = last_data.get("context_summary", "")
                 state["dialogue_start_time"] = time.time() - state["duration"]
                 logging.info(f"Resumed last session: {last_path}")
                 _print_loaded_history(state["messages"])
             else:
                 logging.info("No last session found to resume")
                 print("No last session found to resume")
+        elif k == "showsummary":
+            state["showsummary"] = True
 
     # Если системный промпт задан, но сообщения не начинаются с него — добавляем
     if state["system_prompt"] and not (
@@ -396,6 +410,150 @@ def _load_last_session() -> Optional[Tuple[str, dict]]:
 
 
 # ---------------------------------------------------------------------------
+# Управление контекстом: summary + скользящее окно
+# ---------------------------------------------------------------------------
+
+
+def _summarize_messages(client: OpenAI, model: str, messages: list) -> str:
+    """Вызывает LLM для получения краткого summary списка сообщений.
+
+    Принимает список сообщений (user/assistant), возвращает строку-резюме.
+    При ошибке возвращает пустую строку.
+    """
+    if not messages:
+        return ""
+
+    # Формируем текст диалога для summarization
+    dialogue_text = []
+    for m in messages:
+        role = m.get("role", "")
+        content = (m.get("content") or "").strip()
+        if role in {"user", "assistant"} and content:
+            label = "User" if role == "user" else "Assistant"
+            dialogue_text.append(f"{label}: {content}")
+
+    if not dialogue_text:
+        return ""
+
+    joined = "\n".join(dialogue_text)
+    prompt = (
+        "Ниже приведён фрагмент диалога между пользователем и ИИ-ассистентом. "
+        "Составь краткое, ёмкое резюме на русском языке, сохранив все ключевые факты, "
+        "решения и договорённости. Резюме будет использоваться как контекст для продолжения диалога.\n\n"
+        f"{joined}"
+    )
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=512,
+            temperature=0.3,
+        )
+        return (response.choices[0].message.content or "").strip()
+    except Exception as exc:
+        logging.warning(f"Не удалось создать summary: {exc}")
+        return ""
+
+
+def _build_context_for_api(
+    messages: list,
+    context_summary: str,
+    recent_n: int = CONTEXT_RECENT_MESSAGES,
+) -> list:
+    """Собирает список сообщений для отправки в API.
+
+    Структура (порядок важен для модели):
+      1. Системное сообщение (если есть) — всегда первым
+      2. Сообщение-summary (если есть) — сразу после системного
+      3. Последние recent_n сообщений user/assistant "как есть"
+
+    Токены из messages не включаются (поле 'tokens' — внутренняя метрика).
+    """
+    # Разделяем системное сообщение и остальные
+    system_msgs = [m for m in messages if m.get("role") == "system"]
+    non_system = [m for m in messages if m.get("role") != "system"]
+
+    # Берём только последние N не-системных сообщений
+    recent = non_system[-recent_n:] if len(non_system) > recent_n else non_system
+
+    # Собираем чистый список (без поля 'tokens', которое не нужно API)
+    def _clean(m: dict) -> dict:
+        return {"role": m["role"], "content": m.get("content") or ""}
+
+    result = [_clean(m) for m in system_msgs]
+
+    if context_summary:
+        result.append(
+            {
+                "role": "user",
+                "content": (
+                    f"[Резюме предыдущего диалога для контекста]\n{context_summary}"
+                ),
+            }
+        )
+        result.append(
+            {
+                "role": "assistant",
+                "content": "Понял, учту контекст из резюме.",
+            }
+        )
+
+    result.extend(_clean(m) for m in recent)
+    return result
+
+
+def _maybe_summarize(
+    client: OpenAI,
+    model: str,
+    messages: list,
+    context_summary: str,
+    recent_n: int = CONTEXT_RECENT_MESSAGES,
+    interval: int = CONTEXT_SUMMARY_INTERVAL,
+) -> tuple:
+    """Проверяет, нужно ли создать новое summary, и если да — делает это.
+
+    Суммаризация происходит каждые `interval` не-системных сообщений.
+    Сообщения старше последних `recent_n` сворачиваются в summary и удаляются
+    из messages (остаётся только скользящее окно + системное сообщение).
+
+    Возвращает (обновлённые messages, обновлённый context_summary, было_ли_обновление).
+    """
+    non_system = [m for m in messages if m.get("role") != "system"]
+    system_msgs = [m for m in messages if m.get("role") == "system"]
+
+    # Суммаризируем, если накопилось достаточно сообщений сверх окна
+    excess = len(non_system) - recent_n
+    if excess < interval:
+        return messages, context_summary, False
+
+    # Сообщения, которые нужно свернуть (всё, кроме recent_n последних)
+    to_summarize = non_system[:-recent_n] if recent_n > 0 else non_system
+
+    # Если есть уже существующее summary — добавляем его как контекст
+    summary_context = []
+    if context_summary:
+        summary_context = [
+            {"role": "user", "content": f"[Предыдущее резюме]\n{context_summary}"},
+            {"role": "assistant", "content": "Принято."},
+        ]
+
+    new_summary_text = _summarize_messages(client, model, summary_context + to_summarize)
+
+    if new_summary_text:
+        context_summary = new_summary_text
+        logging.info(
+            f"Summary обновлён: свёрнуто {len(to_summarize)} сообщений."
+        )
+        print(
+            f"\n[Контекст: {len(to_summarize)} старых сообщений свёрнуто в summary]\n"
+        )
+
+    # Оставляем только системные + последние recent_n сообщений
+    messages = system_msgs + non_system[-recent_n:]
+    return messages, context_summary, True
+
+
+# ---------------------------------------------------------------------------
 # Основная функция
 # ---------------------------------------------------------------------------
 
@@ -426,6 +584,7 @@ def main() -> None:
     total_tokens_history = 0
     total_prompt_tokens_history = 0
     total_completion_tokens_history = 0
+    context_summary: str = ""  # накопленное резюме старых сообщений
 
     # Опционально загрузить последнюю сессию и продолжить диалог
     if args.resume:
@@ -453,6 +612,7 @@ def main() -> None:
                 total_completion_tokens_history = session_data.get(
                     "total_completion_tokens", 0
                 )
+                context_summary = last_data.get("context_summary", "")
                 dialogue_start_time = time.time() - duration
                 logging.info(f"Загрузка последней сессии: {session_path}")
                 _print_loaded_history(messages)
@@ -510,6 +670,7 @@ def main() -> None:
                     session_id_metrics=session_id_metrics,
                     dialogue_start_time=dialogue_start_time,
                     duration=duration,
+                    context_summary=context_summary,
                 )
                 model = state["model"]
                 base_url = state["base_url"]
@@ -524,12 +685,22 @@ def main() -> None:
                 session_id_metrics = state["session_id_metrics"]
                 dialogue_start_time = state["dialogue_start_time"]
                 duration = state["duration"]
+                context_summary = state.get("context_summary", context_summary)
                 total_tokens_history = state.get("total_tokens", 0)
                 total_prompt_tokens_history = state.get("total_prompt_tokens", 0)
                 total_completion_tokens_history = state.get(
                     "total_completion_tokens", 0
                 )
-                print(f"Updated config: {updates}")
+                # Обработка /showsummary
+                if state.get("showsummary"):
+                    if context_summary:
+                        print("\n--- Текущее резюме контекста ---")
+                        print(context_summary)
+                        print("--- Конец резюме ---\n")
+                    else:
+                        print("Резюме ещё не создано (накопите больше сообщений).")
+                else:
+                    print(f"Updated config: {updates}")
             else:
                 print("Unknown command")
             continue
@@ -540,13 +711,21 @@ def main() -> None:
         # Добавляем запрос пользователя в историю переписки
         messages.append({"role": "user", "content": user_input})
 
+        # Проверяем, нужно ли свернуть старые сообщения в summary
+        messages, context_summary, summarized = _maybe_summarize(
+            client, model, messages, context_summary
+        )
+
+        # Собираем контекст для отправки в API: system + summary + последние N сообщений
+        api_messages = _build_context_for_api(messages, context_summary)
+
         # Выполнение API-запроса с учётом контекста переписки
         try:
             start_call = time.perf_counter()
             extra = {"top_k": top_k} if top_k is not None else None
             response = client.chat.completions.create(
                 model=model,
-                messages=messages,
+                messages=api_messages,
                 max_tokens=max_tokens,
                 temperature=temperature,
                 top_p=top_p,
@@ -625,6 +804,7 @@ def main() -> None:
             "system_prompt": system_prompt,
             "initial_prompt": initial_prompt,
             "messages": messages,
+            "context_summary": context_summary,
             "turns": len(
                 [m for m in messages if m.get("role") in ("user", "assistant")]
             ),
@@ -663,6 +843,7 @@ def main() -> None:
             "system_prompt": system_prompt,
             "initial_prompt": initial_prompt,
             "messages": messages,
+            "context_summary": context_summary,
             "turns": len(
                 [m for m in messages if m.get("role") in ("user", "assistant")]
             ),

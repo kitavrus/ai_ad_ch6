@@ -1,0 +1,12 @@
+{
+  "model": "qwen/qwen2.5-coder-7b-instruct",
+  "endpoint": "chat",
+  "temp": 0.7,
+  "ttft": 10.777963249999999,
+  "req_time": 10.777963249999999,
+  "total_time": 122.71669101715088,
+  "tokens": 10386,
+  "p_tokens": 8338,
+  "c_tokens": 2048,
+  "cost_rub": 1.5578999999999998
+}
