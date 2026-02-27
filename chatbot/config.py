@@ -1,9 +1,13 @@
 """Конфигурация приложения: константы и Pydantic-модель настроек."""
 
 import os
+from pathlib import Path
 from typing import Optional
 
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+
+load_dotenv(Path(__file__).parent.parent / ".env")
 
 
 # ---------------------------------------------------------------------------
