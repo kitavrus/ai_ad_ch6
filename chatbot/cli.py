@@ -13,8 +13,12 @@ from chatbot.config import (
     DEFAULT_TOP_P,
     SessionConfig,
 )
+from chatbot.models import ContextStrategy
 
 logger = logging.getLogger(__name__)
+
+# Допустимые значения стратегий для CLI-подсказки
+_STRATEGY_VALUES = [s.value for s in ContextStrategy]
 
 
 def parse_args() -> argparse.Namespace:
@@ -61,6 +65,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Загрузить последнюю сессию и продолжить диалог",
     )
+    parser.add_argument(
+        "--strategy",
+        choices=_STRATEGY_VALUES,
+        default=ContextStrategy.SLIDING_WINDOW.value,
+        help="Стратегия управления контекстом",
+    )
     return parser.parse_args()
 
 
@@ -87,7 +97,7 @@ def config_from_args(args: argparse.Namespace) -> SessionConfig:
 def parse_inline_command(line: str) -> dict:
     """Разбор интерактивных inline-команд, начинающихся с '/'.
 
-    Поддерживаемые команды (примеры)::
+    Поддерживаемые команды::
 
         /model=gpt-4
         /base-url https://api.example.com
@@ -100,14 +110,25 @@ def parse_inline_command(line: str) -> dict:
         /resume true|false
         /showsummary            — показать текущее резюме контекста
 
-    Возвращает словарь обновлений для применения к текущей сессии.
-    Ключи нормализованы в стиль Python (подчёркивания).
+        # Управление стратегиями контекста:
+        /strategy sliding_window   — переключить на Sliding Window
+        /strategy sticky_facts     — переключить на Sticky Facts
+        /strategy branching        — переключить на Branching
+        /showfacts                 — показать текущие sticky facts
+        /setfact ключ: значение    — вручную добавить/обновить факт
+        /delfact ключ              — удалить факт по ключу
+
+        # Команды ветвления (branching):
+        /checkpoint                — создать точку сохранения (checkpoint)
+        /branch имя                — создать новую ветку от последнего checkpoint
+        /switch имя_или_id         — переключиться на ветку по имени или ID
+        /branches                  — список всех веток
 
     Args:
         line: Строка ввода пользователя, начинающаяся с '/'.
 
     Returns:
-        Словарь обновлений конфигурации (может быть пустым).
+        Словарь обновлений (может быть пустым).
     """
     cmd = line.strip()
     if not cmd.startswith("/"):
@@ -130,6 +151,8 @@ def parse_inline_command(line: str) -> dict:
     key = key.replace("-", "_")
 
     updates: dict = {}
+
+    # --- Базовые параметры модели ---
     if key == "model":
         updates["model"] = value if value else None
     elif key in {"base_url", "baseurl"}:
@@ -162,8 +185,55 @@ def parse_inline_command(line: str) -> dict:
         updates["resume"] = value.lower() in {"true", "1", "yes", "on"}
     elif key == "showsummary":
         updates["showsummary"] = True
-    # Неизвестные ключи игнорируются
 
+    # --- Переключатель стратегий ---
+    elif key == "strategy":
+        val = value.lower().strip()
+        # Допускаем короткие псевдонимы: sw, sf, br
+        _aliases = {
+            "sw": ContextStrategy.SLIDING_WINDOW.value,
+            "sf": ContextStrategy.STICKY_FACTS.value,
+            "br": ContextStrategy.BRANCHING.value,
+        }
+        val = _aliases.get(val, val)
+        if val in _STRATEGY_VALUES:
+            updates["strategy"] = val
+        else:
+            logger.warning("Неизвестная стратегия: %s. Доступны: %s", val, _STRATEGY_VALUES)
+
+    # --- Sticky Facts ---
+    elif key == "showfacts":
+        updates["showfacts"] = True
+    elif key == "setfact":
+        # /setfact ключ: значение  или  /setfact ключ значение
+        if ":" in value:
+            fact_key, _, fact_val = value.partition(":")
+        else:
+            parts2 = value.split(None, 1)
+            fact_key = parts2[0] if parts2 else ""
+            fact_val = parts2[1] if len(parts2) > 1 else ""
+        fact_key = fact_key.strip().lower()
+        fact_val = fact_val.strip()
+        if fact_key and fact_val:
+            updates["setfact"] = {"key": fact_key, "value": fact_val}
+    elif key == "delfact":
+        if value.strip():
+            updates["delfact"] = value.strip().lower()
+
+    # --- Branching ---
+    elif key == "checkpoint":
+        updates["checkpoint"] = True
+    elif key == "branch":
+        # /branch имя — создать ветку с данным именем от последнего checkpoint
+        updates["branch"] = value.strip() if value.strip() else f"branch-{__import__('uuid').uuid4().hex[:4]}"
+    elif key == "switch":
+        # /switch имя_или_id — переключиться на ветку
+        if value.strip():
+            updates["switch"] = value.strip()
+    elif key == "branches":
+        updates["branches"] = True
+
+    # Неизвестные ключи игнорируются
     return updates
 
 

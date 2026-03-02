@@ -1,8 +1,22 @@
 """Pydantic-модели данных: сообщения, метрики, сессия."""
 
+import enum
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
+
+
+# ---------------------------------------------------------------------------
+# Стратегии управления контекстом
+# ---------------------------------------------------------------------------
+
+
+class ContextStrategy(str, enum.Enum):
+    """Стратегия управления контекстом диалога."""
+
+    SLIDING_WINDOW = "sliding_window"
+    STICKY_FACTS = "sticky_facts"
+    BRANCHING = "branching"
 
 
 # ---------------------------------------------------------------------------
@@ -31,6 +45,65 @@ class ChatMessage(BaseModel):
     def to_api_dict(self) -> Dict[str, str]:
         """Возвращает словарь для отправки в API (без поля tokens)."""
         return {"role": self.role, "content": self.content}
+
+
+# ---------------------------------------------------------------------------
+# Sticky Facts (ключ-значение)
+# ---------------------------------------------------------------------------
+
+
+class StickyFact(BaseModel):
+    """Один факт в памяти ключ-значение."""
+
+    key: str = Field(description="Ключ факта (напр: 'цель', 'ограничения', 'предпочтения')")
+    value: str = Field(description="Значение факта")
+    source_message_index: int = Field(
+        default=-1,
+        description="Индекс сообщения-источника факта",
+    )
+
+
+class StickyFacts(BaseModel):
+    """Коллекция sticky facts."""
+
+    facts: Dict[str, str] = Field(default_factory=dict)
+
+    def get(self, key: str) -> Optional[str]:
+        return self.facts.get(key)
+
+    def set(self, key: str, value: str) -> None:
+        self.facts[key] = value
+
+    def update_from_message(self, key: str, value: str, msg_index: int) -> None:
+        self.facts[key] = value
+
+    def to_list(self) -> List[Dict[str, str]]:
+        return [{"key": k, "value": v} for k, v in self.facts.items()]
+
+
+# ---------------------------------------------------------------------------
+# Branching (ветки диалога)
+# ---------------------------------------------------------------------------
+
+
+class DialogueCheckpoint(BaseModel):
+    """Точка сохранения состояния для ветвления."""
+
+    messages_snapshot: List[Dict[str, Any]] = Field(default_factory=list)
+    facts_snapshot: Dict[str, str] = Field(default_factory=dict)
+    created_at: str = ""
+
+
+class Branch(BaseModel):
+    """Ветка диалога."""
+
+    branch_id: str = Field(description="Уникальный ID ветки")
+    name: str = Field(description="Название ветки")
+    checkpoint: DialogueCheckpoint = Field(
+        default_factory=DialogueCheckpoint,
+        description="Snapshot состояния в момент создания ветки",
+    )
+    messages: List[ChatMessage] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -77,6 +150,10 @@ class DialogueSession(BaseModel):
     total_prompt_tokens: int = 0
     total_completion_tokens: int = 0
     requests: List[RequestMetric] = Field(default_factory=list)
+    context_strategy: ContextStrategy = ContextStrategy.SLIDING_WINDOW
+    sticky_facts: Dict[str, str] = Field(default_factory=dict)
+    branches: List[Branch] = Field(default_factory=list)
+    active_branch_id: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -105,5 +182,10 @@ class SessionState(BaseModel):
     total_completion_tokens: int = 0
     context_summary: str = ""
     request_index: int = 0
+    context_strategy: ContextStrategy = ContextStrategy.SLIDING_WINDOW
+    sticky_facts: StickyFacts = Field(default_factory=StickyFacts)
+    branches: List[Branch] = Field(default_factory=list)
+    active_branch_id: Optional[str] = None
+    last_checkpoint: Optional[DialogueCheckpoint] = None
 
     model_config = {"arbitrary_types_allowed": True}

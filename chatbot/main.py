@@ -14,8 +14,24 @@ from chatbot.config import (
     RUB_PER_USD,
     USD_PER_1K_TOKENS,
 )
-from chatbot.context import build_context_for_api, maybe_summarize
-from chatbot.models import ChatMessage, DialogueSession, RequestMetric, SessionState, TokenUsage
+from chatbot.context import (
+    build_context_by_strategy,
+    create_branch,
+    create_checkpoint,
+    extract_facts_from_llm,
+    maybe_summarize,
+    switch_branch,
+)
+from chatbot.models import (
+    Branch,
+    ChatMessage,
+    ContextStrategy,
+    DialogueSession,
+    RequestMetric,
+    SessionState,
+    StickyFacts,
+    TokenUsage,
+)
 from chatbot.storage import load_last_session, log_request_metric, save_session
 
 logger = logging.getLogger(__name__)
@@ -27,11 +43,7 @@ logger = logging.getLogger(__name__)
 
 
 def _print_loaded_history(messages: List[ChatMessage]) -> None:
-    """Выводит последние 5 обменов из истории диалога с метриками токенов.
-
-    Args:
-        messages: Полная история сообщений текущей сессии.
-    """
+    """Выводит последние 5 обменов из истории диалога с метриками токенов."""
     try:
         turns = []
         filtered = [m for m in messages if m.role in {"user", "assistant"}]
@@ -44,13 +56,11 @@ def _print_loaded_history(messages: List[ChatMessage]) -> None:
                     if i + 1 < len(filtered) and filtered[i + 1].role == "assistant"
                     else None
                 )
-                turns.append(
-                    (
-                        msg.content.strip(),
-                        assistant_msg.content.strip() if assistant_msg else "",
-                        assistant_msg.tokens if assistant_msg else None,
-                    )
-                )
+                turns.append((
+                    msg.content.strip(),
+                    assistant_msg.content.strip() if assistant_msg else "",
+                    assistant_msg.tokens if assistant_msg else None,
+                ))
                 i += 2
             else:
                 i += 1
@@ -96,20 +106,32 @@ def _print_loaded_history(messages: List[ChatMessage]) -> None:
         logger.debug("Failed to print loaded history: %s", exc)
 
 
+def _print_strategy_status(state: SessionState) -> None:
+    """Выводит текущую стратегию и связанный статус."""
+    strategy = state.context_strategy
+    print(f"\n[Стратегия контекста: {strategy.value}]")
+    if strategy == ContextStrategy.SLIDING_WINDOW:
+        print(f"  Окно: последние N сообщений. Summary: {'есть' if state.context_summary else 'нет'}.")
+    elif strategy == ContextStrategy.STICKY_FACTS:
+        count = len(state.sticky_facts.facts)
+        print(f"  Фактов в памяти: {count}.")
+        if count:
+            for k, v in state.sticky_facts.facts.items():
+                print(f"    {k}: {v}")
+    elif strategy == ContextStrategy.BRANCHING:
+        branch_count = len(state.branches)
+        active = state.active_branch_id or "нет"
+        print(f"  Веток: {branch_count}. Активная: {active}.")
+    print()
+
+
 # ---------------------------------------------------------------------------
 # Загрузка и применение данных сессии
 # ---------------------------------------------------------------------------
 
 
 def _load_messages_from_dict(raw: list) -> List[ChatMessage]:
-    """Преобразует список словарей из JSON-сессии в список ChatMessage.
-
-    Args:
-        raw: Список словарей сообщений из сохранённого файла.
-
-    Returns:
-        Список объектов ChatMessage.
-    """
+    """Преобразует список словарей из JSON-сессии в список ChatMessage."""
     result: List[ChatMessage] = []
     for item in raw:
         tokens = item.get("tokens")
@@ -120,23 +142,16 @@ def _load_messages_from_dict(raw: list) -> List[ChatMessage]:
                 completion=tokens.get("completion", 0),
                 total=tokens.get("total", 0),
             )
-        result.append(
-            ChatMessage(
-                role=item.get("role", "user"),
-                content=item.get("content") or "",
-                tokens=token_usage,
-            )
-        )
+        result.append(ChatMessage(
+            role=item.get("role", "user"),
+            content=item.get("content") or "",
+            tokens=token_usage,
+        ))
     return result
 
 
 def _apply_session_data(data: dict, state: SessionState) -> None:
-    """Применяет данные загруженной сессии к рабочему состоянию.
-
-    Args:
-        data: Словарь данных из JSON-файла сессии.
-        state: Рабочее состояние сессии (изменяется на месте).
-    """
+    """Применяет данные загруженной сессии к рабочему состоянию."""
     state.messages = _load_messages_from_dict(data.get("messages", []))
     state.model = data.get("model", state.model)
     state.base_url = data.get("base_url", state.base_url)
@@ -147,6 +162,14 @@ def _apply_session_data(data: dict, state: SessionState) -> None:
     state.total_prompt_tokens = data.get("total_prompt_tokens", 0)
     state.total_completion_tokens = data.get("total_completion_tokens", 0)
     state.context_summary = data.get("context_summary", "")
+    # Восстанавливаем стратегию и факты если были сохранены
+    if "context_strategy" in data:
+        try:
+            state.context_strategy = ContextStrategy(data["context_strategy"])
+        except ValueError:
+            pass
+    if "sticky_facts" in data and isinstance(data["sticky_facts"], dict):
+        state.sticky_facts = StickyFacts(facts=data["sticky_facts"])
 
 
 # ---------------------------------------------------------------------------
@@ -157,10 +180,6 @@ def _apply_session_data(data: dict, state: SessionState) -> None:
 def _apply_inline_updates(updates: dict, state: SessionState) -> bool:
     """Применяет разобранные inline-команды к рабочему состоянию сессии.
 
-    Args:
-        updates: Словарь обновлений от parse_inline_command.
-        state: Рабочее состояние сессии (изменяется на месте).
-
     Returns:
         True, если была обработана команда /showsummary.
     """
@@ -169,6 +188,8 @@ def _apply_inline_updates(updates: dict, state: SessionState) -> bool:
     for key, value in updates.items():
         if value is None:
             continue
+
+        # --- Базовые параметры ---
         if key == "model":
             state.model = value
         elif key == "base_url":
@@ -209,13 +230,85 @@ def _apply_inline_updates(updates: dict, state: SessionState) -> bool:
         elif key == "showsummary":
             show_summary = True
 
+        # --- Стратегия контекста ---
+        elif key == "strategy":
+            try:
+                new_strategy = ContextStrategy(value)
+                state.context_strategy = new_strategy
+                print(f"\n[Стратегия переключена на: {new_strategy.value}]")
+                _print_strategy_status(state)
+            except ValueError:
+                print(f"Неизвестная стратегия: {value}")
+
+        # --- Sticky Facts ---
+        elif key == "showfacts":
+            if state.sticky_facts.facts:
+                print("\n--- Текущие факты (Sticky Facts) ---")
+                for k, v in state.sticky_facts.facts.items():
+                    print(f"  {k}: {v}")
+                print("--- Конец фактов ---\n")
+            else:
+                print("Факты пока не накоплены.")
+        elif key == "setfact" and isinstance(value, dict):
+            fact_key = value.get("key", "")
+            fact_val = value.get("value", "")
+            if fact_key and fact_val:
+                state.sticky_facts.set(fact_key, fact_val)
+                print(f"[Факт добавлен/обновлён: {fact_key} = {fact_val}]")
+        elif key == "delfact" and isinstance(value, str):
+            if value in state.sticky_facts.facts:
+                del state.sticky_facts.facts[value]
+                print(f"[Факт удалён: {value}]")
+            else:
+                print(f"Факт не найден: {value}")
+
+        # --- Branching ---
+        elif key == "checkpoint":
+            chk = create_checkpoint(state.messages, state.sticky_facts)
+            state.last_checkpoint = chk
+            print(f"\n[Checkpoint создан: {chk.created_at}]")
+            print(f"  Сообщений в snapshot: {len(chk.messages_snapshot)}")
+            print(f"  Фактов в snapshot:    {len(chk.facts_snapshot)}\n")
+
+        elif key == "branch":
+            last_chk = state.last_checkpoint
+            if last_chk is None:
+                # Создаём checkpoint прямо сейчас
+                last_chk = create_checkpoint(state.messages, state.sticky_facts)
+                state.last_checkpoint = last_chk
+                print("[Checkpoint создан автоматически для ветвления]")
+            branch = create_branch(value, last_chk)
+            state.branches.append(branch)
+            state.active_branch_id = branch.branch_id
+            print(f"\n[Создана ветка '{branch.name}' (ID: {branch.branch_id})]")
+            print(f"  Начато от snapshot с {len(last_chk.messages_snapshot)} сообщениями.")
+            print(f"  Активная ветка: {branch.branch_id}\n")
+
+        elif key == "switch":
+            found = switch_branch(value, state.branches)
+            if found:
+                state.active_branch_id = found.branch_id
+                print(f"\n[Переключено на ветку '{found.name}' (ID: {found.branch_id})]")
+                print(f"  Сообщений в ветке: {len(found.messages)}\n")
+            else:
+                names = [(b.branch_id, b.name) for b in state.branches]
+                print(f"Ветка не найдена: '{value}'. Доступны: {names}")
+
+        elif key == "branches":
+            if state.branches:
+                print("\n--- Ветки диалога ---")
+                for b in state.branches:
+                    active_marker = " ◀ активная" if b.branch_id == state.active_branch_id else ""
+                    print(f"  [{b.branch_id}] {b.name}{active_marker}  ({len(b.messages)} сообщений)")
+                print("--- Конец списка ---\n")
+            else:
+                print("Веток пока нет. Используйте /checkpoint, затем /branch <имя>.")
+
     # Если системный промпт задан, но сообщения не начинаются с него — добавляем
     if state.system_prompt and not (
         state.messages and state.messages[0].role == "system"
     ):
-        state.messages.insert(
-            0, ChatMessage(role="system", content=state.system_prompt)
-        )
+        state.messages.insert(0, ChatMessage(role="system", content=state.system_prompt))
 
     return show_summary
 
@@ -230,16 +323,7 @@ def _build_session_payload(
     user_input: Optional[str] = None,
     assistant_text: Optional[str] = None,
 ) -> DialogueSession:
-    """Собирает объект DialogueSession из текущего состояния.
-
-    Args:
-        state: Рабочее состояние сессии.
-        user_input: Последний ввод пользователя (опционально).
-        assistant_text: Последний ответ ассистента (опционально).
-
-    Returns:
-        Заполненный объект DialogueSession.
-    """
+    """Собирает объект DialogueSession из текущего состояния."""
     return DialogueSession(
         dialogue_session_id=state.session_path or "",
         created_at=datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -256,7 +340,41 @@ def _build_session_payload(
         total_tokens=state.total_tokens,
         total_prompt_tokens=state.total_prompt_tokens,
         total_completion_tokens=state.total_completion_tokens,
+        context_strategy=state.context_strategy,
+        sticky_facts=dict(state.sticky_facts.facts),
+        branches=list(state.branches),
+        active_branch_id=state.active_branch_id,
     )
+
+
+# ---------------------------------------------------------------------------
+# Вспомогательная функция: добавить сообщение в нужное место
+# ---------------------------------------------------------------------------
+
+
+def _append_message(state: SessionState, message: ChatMessage) -> None:
+    """Добавляет сообщение в активную ветку (если branching) или в state.messages."""
+    if (
+        state.context_strategy == ContextStrategy.BRANCHING
+        and state.active_branch_id
+    ):
+        branch = switch_branch(state.active_branch_id, state.branches)
+        if branch:
+            branch.messages.append(message)
+            return
+    state.messages.append(message)
+
+
+def _get_active_messages(state: SessionState) -> List[ChatMessage]:
+    """Возвращает активный список сообщений (ветка или главная история)."""
+    if (
+        state.context_strategy == ContextStrategy.BRANCHING
+        and state.active_branch_id
+    ):
+        branch = switch_branch(state.active_branch_id, state.branches)
+        if branch:
+            return branch.messages
+    return state.messages
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +390,11 @@ def main() -> None:
     args = parse_args()
     cfg = config_from_args(args)
 
+    # Начальная стратегия из CLI-аргумента
+    initial_strategy = ContextStrategy(
+        getattr(args, "strategy", ContextStrategy.SLIDING_WINDOW.value)
+    )
+
     state = SessionState(
         model=cfg.model,
         base_url=cfg.base_url,
@@ -282,6 +405,7 @@ def main() -> None:
         system_prompt=cfg.system_prompt,
         initial_prompt=cfg.initial_prompt,
         dialogue_start_time=time.time(),
+        context_strategy=initial_strategy,
     )
 
     # Опционально загружаем последнюю сессию
@@ -317,7 +441,10 @@ def main() -> None:
     if state.initial_prompt:
         state.messages.append(ChatMessage(role="user", content=state.initial_prompt))
 
-    print("Введите запрос (type 'exit' чтобы выйти):")
+    print(f"Введите запрос (type 'exit' чтобы выйти). Стратегия: {state.context_strategy.value}")
+    print("Команды стратегий: /strategy <sliding_window|sticky_facts|branching>")
+    print("Ветвление: /checkpoint  /branch <имя>  /switch <имя_или_id>  /branches")
+    print("Факты:     /showfacts   /setfact <ключ>: <значение>   /delfact <ключ>\n")
 
     while True:
         try:
@@ -341,7 +468,13 @@ def main() -> None:
                         print("--- Конец резюме ---\n")
                     else:
                         print("Резюме ещё не создано (накопите больше сообщений).")
-                else:
+                elif not any(
+                    k in updates for k in (
+                        "showfacts", "setfact", "delfact",
+                        "checkpoint", "branch", "switch", "branches",
+                        "strategy",
+                    )
+                ):
                     print(f"Updated config: {updates}")
             else:
                 print("Unknown command")
@@ -350,16 +483,28 @@ def main() -> None:
         if user_input.strip().lower() in {"exit", "quit", "q"}:
             break
 
-        # Добавляем сообщение пользователя
-        state.messages.append(ChatMessage(role="user", content=user_input))
+        # Добавляем сообщение пользователя в активный контекст
+        _append_message(state, ChatMessage(role="user", content=user_input))
 
-        # Суммаризация при необходимости
-        state.messages, state.context_summary, _ = maybe_summarize(
-            client, state.model, state.messages, state.context_summary
+        # Суммаризация при необходимости (только для sliding_window)
+        if state.context_strategy == ContextStrategy.SLIDING_WINDOW:
+            state.messages, state.context_summary, _ = maybe_summarize(
+                client, state.model, state.messages, state.context_summary
+            )
+
+        # Получаем активную ветку для branching
+        active_branch: Optional[Branch] = None
+        if state.context_strategy == ContextStrategy.BRANCHING and state.active_branch_id:
+            active_branch = switch_branch(state.active_branch_id, state.branches)
+
+        # Собираем контекст по выбранной стратегии
+        api_messages: Any = build_context_by_strategy(
+            strategy=state.context_strategy,
+            messages=state.messages,
+            context_summary=state.context_summary,
+            facts=state.sticky_facts,
+            active_branch=active_branch,
         )
-
-        # Собираем контекст для API
-        api_messages: Any = build_context_for_api(state.messages, state.context_summary)
 
         # Выполняем API-запрос
         try:
@@ -384,7 +529,7 @@ def main() -> None:
             else ""
         )
 
-        # Извлекаем метрики токенов
+        # Метрики токенов
         usage = getattr(response, "usage", None)
         prompt_tokens = int(getattr(usage, "prompt_tokens", None) or 0)
         completion_tokens = int(getattr(usage, "completion_tokens", None) or 0)
@@ -410,19 +555,35 @@ def main() -> None:
             f"ответ={state.total_completion_tokens}, "
             f"всего={state.total_tokens} | ~{total_cost_rub:.2f}₽]"
         )
+        print(f"[Стратегия: {state.context_strategy.value}]")
 
-        # Сохраняем ответ ассистента в историю
-        state.messages.append(
-            ChatMessage(
-                role="assistant",
-                content=text,
-                tokens=TokenUsage(
-                    prompt=prompt_tokens,
-                    completion=completion_tokens,
-                    total=total_tokens,
-                ),
-            )
+        # Сохраняем ответ ассистента в активный контекст
+        assistant_msg = ChatMessage(
+            role="assistant",
+            content=text,
+            tokens=TokenUsage(
+                prompt=prompt_tokens,
+                completion=completion_tokens,
+                total=total_tokens,
+            ),
         )
+        _append_message(state, assistant_msg)
+
+        # Обновляем Sticky Facts после каждого обмена
+        if state.context_strategy == ContextStrategy.STICKY_FACTS:
+            try:
+                new_facts = extract_facts_from_llm(
+                    client, state.model,
+                    user_input, text,
+                    state.sticky_facts.facts,
+                )
+                if new_facts:
+                    for k, v in new_facts.items():
+                        state.sticky_facts.set(k, v)
+                    logger.info("Sticky facts обновлены: %s", list(new_facts.keys()))
+                    print(f"[Facts обновлены: {list(new_facts.keys())}]")
+            except Exception as exc:
+                logger.debug("Ошибка обновления facts: %s", exc)
 
         # Метрика запроса
         metric = RequestMetric(
@@ -438,7 +599,7 @@ def main() -> None:
             cost_rub=cost_rub,
         )
 
-        # Перезаписываем файл сессии после каждого шага
+        # Сохраняем сессию
         session = _build_session_payload(state, user_input, text)
         session.requests.append(metric)
         try:
