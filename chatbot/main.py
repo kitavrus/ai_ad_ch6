@@ -391,9 +391,13 @@ def main() -> None:
     cfg = config_from_args(args)
 
     # Начальная стратегия из CLI-аргумента
-    initial_strategy = ContextStrategy(
-        getattr(args, "strategy", ContextStrategy.SLIDING_WINDOW.value)
-    )
+    _strategy_raw = getattr(args, "strategy", None)
+    try:
+        initial_strategy = ContextStrategy(
+            _strategy_raw if isinstance(_strategy_raw, str) else ContextStrategy.SLIDING_WINDOW.value
+        )
+    except (ValueError, TypeError):
+        initial_strategy = ContextStrategy.SLIDING_WINDOW
 
     state = SessionState(
         model=cfg.model,
