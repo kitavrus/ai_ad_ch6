@@ -124,6 +124,20 @@ def parse_inline_command(line: str) -> dict:
         /switch имя_или_id         — переключиться на ветку по имени или ID
         /branches                  — список всех веток
 
+        # Команды управления памятью:
+        /memory <short_term|working|long_term> <save|load|show|stats|clear>
+        /memsave [short|working|long]       — сохранить указанную память
+        /memload [short|working|long]       — загрузить указанную память
+        /memshow [all|short|working|long]   — показать состояние памяти
+        /memstats                           — статистика по всей памяти
+        /memclear [all|short|working|long]  — очистить указанную память
+
+        /setpref <ключ>: <значение>         — установить предпочтение (working)
+        /getpref <ключ>                     — получить предпочтение (working)
+        /decision <описание>               — добавить решение (long_term)
+        /knowledge <ключ>: <значение>      — добавить знание (long_term)
+        /profile <ключ>: <значение>        — изменить профиль (long_term)
+
     Args:
         line: Строка ввода пользователя, начинающаяся с '/'.
 
@@ -233,7 +247,33 @@ def parse_inline_command(line: str) -> dict:
     elif key == "branches":
         updates["branches"] = True
 
-    # Неизвестные ключи игнорируются
+    # --- Управление памятью ---
+    elif key == "memshow":
+        updates["memshow"] = value.strip().lower() or "all"
+    elif key == "memstats":
+        updates["memstats"] = True
+    elif key == "memclear":
+        updates["memclear"] = value.strip().lower() or "short_term"
+    elif key == "memsave":
+        updates["memsave"] = value.strip().lower() or "all"
+    elif key == "memload":
+        updates["memload"] = value.strip().lower() or "all"
+    elif key == "settask":
+        if value.strip():
+            updates["settask"] = value.strip()
+    elif key == "setpref":
+        # /setpref key=value
+        if value.strip():
+            updates["setpref"] = value.strip()
+    elif key == "remember":
+        # /remember key=value  or  /remember decision text
+        if value.strip():
+            updates["remember"] = value.strip()
+
+    # Устаревшие варианты — перенаправляем
+    elif key == "memory":
+        pass  # игнорируем голый /memory без аргументов
+
     return updates
 
 

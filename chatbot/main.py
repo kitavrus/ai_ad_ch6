@@ -22,6 +22,19 @@ from chatbot.context import (
     maybe_summarize,
     switch_branch,
 )
+from chatbot.memory import Memory, MemoryFactor
+from chatbot.memory_storage import (
+    get_memory_stats,
+    import_memory_state,
+    list_long_term_memories,
+    list_working_memories,
+    load_long_term,
+    load_short_term_last,
+    load_working_memory,
+    save_long_term,
+    save_short_term,
+    save_working_memory,
+)
 from chatbot.models import (
     Branch,
     ChatMessage,
@@ -304,6 +317,78 @@ def _apply_inline_updates(updates: dict, state: SessionState) -> bool:
             else:
                 print("Веток пока нет. Используйте /checkpoint, затем /branch <имя>.")
 
+        # --- Управление памятью ---
+        elif key == "memshow":
+            mem = state.memory
+            print("\n--- Состояние памяти ---")
+            print(f"Краткосрочная: {len(mem.short_term.messages)} сообщений")
+            print(f"Рабочая: задача={mem.working.current_task!r}, статус={mem.working.task_status}")
+            print(f"Долговременная: профиль={mem.long_term.user_profile}, решений={len(mem.long_term.decisions_log)}, знаний={len(mem.long_term.knowledge_base)}")
+            print("--- Конец ---\n")
+
+        elif key == "memstats":
+            stats = get_memory_stats()
+            print("\n--- Статистика памяти ---")
+            for mtype, data in stats.items():
+                print(f"  {mtype}: {data['files']} файлов, {data['size_bytes']} байт")
+            print("--- Конец ---\n")
+
+        elif key == "memclear":
+            state.memory.clear_short_term()
+            print("[Краткосрочная память очищена]")
+
+        elif key == "memsave":
+            mem = state.memory
+            task_name = mem.working.current_task or "current"
+            path_w = save_working_memory(mem.working.model_dump(), task_name)
+            path_lt = save_long_term(mem.long_term.model_dump())
+            path_st = save_short_term(mem.short_term.model_dump(), state.session_path or "default")
+            print(f"[Память сохранена: рабочая={path_w}, долговременная={path_lt}, краткосрочная={path_st}]")
+
+        elif key == "memload":
+            mem = state.memory
+            task_name = mem.working.current_task or "current"
+            data_w = load_working_memory(task_name)
+            if data_w:
+                from chatbot.memory import WorkingMemory
+                mem.working = WorkingMemory(**data_w)
+                print(f"[Рабочая память загружена: задача={mem.working.current_task!r}]")
+            else:
+                print("[Рабочая память не найдена]")
+            data_lt = load_long_term()
+            if data_lt:
+                from chatbot.memory import LongTermMemory
+                mem.long_term = LongTermMemory(**data_lt)
+                print(f"[Долговременная память загружена: решений={len(mem.long_term.decisions_log)}]")
+            else:
+                print("[Долговременная память не найдена]")
+
+        elif key == "settask":
+            state.memory.working.set_task(value)
+            print(f"[Задача установлена: {value!r}]")
+
+        elif key == "setpref":
+            # value expected as "key=val"
+            if "=" in str(value):
+                pref_key, pref_val = str(value).split("=", 1)
+                state.memory.working.set_preference(pref_key.strip(), pref_val.strip())
+                print(f"[Предпочтение: {pref_key.strip()} = {pref_val.strip()}]")
+            else:
+                print("[setpref: ожидается формат key=value]")
+
+        elif key == "remember":
+            # Save a fact to long-term knowledge base: "key=value"
+            if "=" in str(value):
+                fact_key, fact_val = str(value).split("=", 1)
+                state.memory.add_to_long_term(knowledge_key=fact_key.strip(), knowledge_value=fact_val.strip())
+                print(f"[Знание сохранено: {fact_key.strip()}]")
+            else:
+                state.memory.add_to_long_term(
+                    decision=str(value),
+                    task=state.memory.working.current_task or "untitled",
+                )
+                print("[Решение сохранено в долговременную память]")
+
     # Если системный промпт задан, но сообщения не начинаются с него — добавляем
     if state.system_prompt and not (
         state.messages and state.messages[0].role == "system"
@@ -410,6 +495,7 @@ def main() -> None:
         initial_prompt=cfg.initial_prompt,
         dialogue_start_time=time.time(),
         context_strategy=initial_strategy,
+        memory=Memory(),
     )
 
     # Опционально загружаем последнюю сессию
@@ -448,7 +534,9 @@ def main() -> None:
     print(f"Введите запрос (type 'exit' чтобы выйти). Стратегия: {state.context_strategy.value}")
     print("Команды стратегий: /strategy <sliding_window|sticky_facts|branching>")
     print("Ветвление: /checkpoint  /branch <имя>  /switch <имя_или_id>  /branches")
-    print("Факты:     /showfacts   /setfact <ключ>: <значение>   /delfact <ключ>\n")
+    print("Факты:     /showfacts   /setfact <ключ>: <значение>   /delfact <ключ>")
+    print("Память:    /memshow  /memstats  /memsave  /memload  /memclear")
+    print("           /settask <задача>  /setpref <ключ>=<значение>  /remember <ключ>=<значение>\n")
 
     while True:
         try:
@@ -477,6 +565,8 @@ def main() -> None:
                         "showfacts", "setfact", "delfact",
                         "checkpoint", "branch", "switch", "branches",
                         "strategy",
+                        "memshow", "memstats", "memsave", "memload", "memclear",
+                        "settask", "setpref", "remember",
                     )
                 ):
                     print(f"Updated config: {updates}")
@@ -489,6 +579,7 @@ def main() -> None:
 
         # Добавляем сообщение пользователя в активный контекст
         _append_message(state, ChatMessage(role="user", content=user_input))
+        state.memory.add_user_message(user_input)
 
         # Суммаризация при необходимости (только для sliding_window)
         if state.context_strategy == ContextStrategy.SLIDING_WINDOW:
@@ -572,6 +663,7 @@ def main() -> None:
             ),
         )
         _append_message(state, assistant_msg)
+        state.memory.add_assistant_message(text)
 
         # Обновляем Sticky Facts после каждого обмена
         if state.context_strategy == ContextStrategy.STICKY_FACTS:

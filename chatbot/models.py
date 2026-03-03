@@ -187,5 +187,6 @@ class SessionState(BaseModel):
     branches: List[Branch] = Field(default_factory=list)
     active_branch_id: Optional[str] = None
     last_checkpoint: Optional[DialogueCheckpoint] = None
+    memory: Any = Field(default=None, description="Объект Memory (три типа памяти)")
 
     model_config = {"arbitrary_types_allowed": True}
