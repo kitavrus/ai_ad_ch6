@@ -4,6 +4,7 @@ import glob
 import json
 import logging
 import os
+import re
 from datetime import datetime
 from typing import Any, Dict, Optional, Tuple
 
@@ -23,6 +24,19 @@ WORKING_DIR: str = os.path.join(MEMORY_DIR, "working")
 LONG_TERM_DIR: str = os.path.join(MEMORY_DIR, "long_term")
 
 
+def _safe_name(name: str) -> str:
+    """Превращает произвольную строку в безопасное имя файла.
+
+    Берёт только basename (без пути), убирает расширение .json,
+    заменяет все символы кроме букв/цифр/дефиса/подчёркивания на '_',
+    обрезает до 64 символов.
+    """
+    name = os.path.basename(name)
+    name = re.sub(r"\.json$", "", name, flags=re.IGNORECASE)
+    name = re.sub(r"[^\w\-]", "_", name)
+    return name[:64] or "default"
+
+
 # ===========================================================================
 # КРАТКОСРОЧНАЯ ПАМЯТЬ
 # ===========================================================================
@@ -39,7 +53,7 @@ def save_short_term(memory: dict, session_id: str) -> str:
         Путь к сохранённому файлу.
     """
     os.makedirs(SHORT_TERM_DIR, exist_ok=True)
-    filename = f"session_{session_id}_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}.json"
+    filename = f"session_{_safe_name(session_id)}_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}.json"
     path = os.path.join(SHORT_TERM_DIR, filename)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(memory, f, ensure_ascii=False, indent=2)
@@ -84,7 +98,7 @@ def save_working_memory(memory: dict, task_name: Optional[str] = None) -> str:
         Путь к сохранённому файлу.
     """
     os.makedirs(WORKING_DIR, exist_ok=True)
-    task_part = task_name or "current"
+    task_part = _safe_name(task_name) if task_name else "current"
     filename = f"task_{task_part}_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}.json"
     path = os.path.join(WORKING_DIR, filename)
     with open(path, "w", encoding="utf-8") as f:

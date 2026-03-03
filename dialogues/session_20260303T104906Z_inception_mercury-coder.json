@@ -1,0 +1,67 @@
+{
+  "dialogue_session_id": "dialogues/session_20260303T104906Z_inception_mercury-coder.json",
+  "created_at": "2026-03-03T10:51:38Z",
+  "model": "inception/mercury-coder",
+  "base_url": "https://routerai.ru/api/v1",
+  "system_prompt": null,
+  "initial_prompt": null,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Как меня зовут?",
+      "tokens": null
+    },
+    {
+      "role": "assistant",
+      "content": "У меня нет информации о вашем имени, поэтому я не могу ответить на этот вопрос.",
+      "tokens": {
+        "prompt": 18,
+        "completion": 19,
+        "total": 37
+      }
+    },
+    {
+      "role": "user",
+      "content": "Как меня зовут?",
+      "tokens": null
+    },
+    {
+      "role": "assistant",
+      "content": "Я не знаю вашего имени, поэтому не могу ответить на этот вопрос.",
+      "tokens": {
+        "prompt": 49,
+        "completion": 16,
+        "total": 65
+      }
+    },
+    {
+      "role": "user",
+      "content": "Меня зовут игорь",
+      "tokens": null
+    },
+    {
+      "role": "assistant",
+      "content": "Приятно познакомиться, Игорь! Как я могу вам помочь?",
+      "tokens": {
+        "prompt": 79,
+        "completion": 17,
+        "total": 96
+      }
+    }
+  ],
+  "context_summary": "",
+  "turns": 6,
+  "last_user_input": null,
+  "last_assistant_content": null,
+  "duration_seconds": 152.40853905677795,
+  "total_tokens": 198,
+  "total_prompt_tokens": 146,
+  "total_completion_tokens": 52,
+  "requests": [],
+  "context_strategy": "sliding_window",
+  "sticky_facts": {
+    "имя": "Игорь"
+  },
+  "branches": [],
+  "active_branch_id": null
+}
