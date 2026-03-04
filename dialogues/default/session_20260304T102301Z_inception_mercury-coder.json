@@ -1,0 +1,93 @@
+{
+  "dialogue_session_id": "dialogues/default/session_20260304T102301Z_inception_mercury-coder.json",
+  "created_at": "2026-03-04T10:27:57Z",
+  "model": "inception/mercury-coder",
+  "base_url": "https://routerai.ru/api/v1",
+  "system_prompt": null,
+  "initial_prompt": null,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Я Игорь",
+      "tokens": null
+    },
+    {
+      "role": "assistant",
+      "content": "Приятно познакомиться, Игорь! Как я могу вам помочь сегодня?",
+      "tokens": {
+        "prompt": 17,
+        "completion": 17,
+        "total": 34
+      }
+    },
+    {
+      "role": "user",
+      "content": "Меня зовут боб",
+      "tokens": null
+    },
+    {
+      "role": "assistant",
+      "content": "Приятно познакомиться, Боб! Как я могу вам помочь сегодня?",
+      "tokens": {
+        "prompt": 48,
+        "completion": 16,
+        "total": 64
+      }
+    },
+    {
+      "role": "user",
+      "content": "Как меня зовут?",
+      "tokens": null
+    },
+    {
+      "role": "assistant",
+      "content": "Ваше имя — Боб.",
+      "tokens": {
+        "prompt": 77,
+        "completion": 11,
+        "total": 88
+      }
+    },
+    {
+      "role": "user",
+      "content": "Как тебя зовут?",
+      "tokens": null
+    },
+    {
+      "role": "assistant",
+      "content": "Меня зовут Mercury.",
+      "tokens": {
+        "prompt": 94,
+        "completion": 10,
+        "total": 104
+      }
+    },
+    {
+      "role": "user",
+      "content": "Как меня зовут",
+      "tokens": null
+    },
+    {
+      "role": "assistant",
+      "content": "Ваше имя — Боб.",
+      "tokens": {
+        "prompt": 112,
+        "completion": 11,
+        "total": 123
+      }
+    }
+  ],
+  "context_summary": "",
+  "turns": 10,
+  "last_user_input": null,
+  "last_assistant_content": null,
+  "duration_seconds": 295.7633709907532,
+  "total_tokens": 413,
+  "total_prompt_tokens": 348,
+  "total_completion_tokens": 65,
+  "requests": [],
+  "context_strategy": "sliding_window",
+  "sticky_facts": {},
+  "branches": [],
+  "active_branch_id": null
+}

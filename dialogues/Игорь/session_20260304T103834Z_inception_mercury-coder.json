@@ -1,0 +1,78 @@
+{
+  "dialogue_session_id": "dialogues/Игорь/session_20260304T103834Z_inception_mercury-coder.json",
+  "created_at": "2026-03-04T10:41:58Z",
+  "model": "inception/mercury-coder",
+  "base_url": "https://routerai.ru/api/v1",
+  "system_prompt": null,
+  "initial_prompt": null,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Привет\\! Меня зовут Игорь. Запомни это.",
+      "tokens": null
+    },
+    {
+      "role": "assistant",
+      "content": "Привет, Игорь! Я запомнил, что ты зовут Игорь. Если понадобится, смело обращайся!",
+      "tokens": {
+        "prompt": 30,
+        "completion": 29,
+        "total": 59
+      }
+    },
+    {
+      "role": "user",
+      "content": "Как меня зовут?",
+      "tokens": null
+    },
+    {
+      "role": "assistant",
+      "content": "Твоё имя — Игорь.",
+      "tokens": {
+        "prompt": 70,
+        "completion": 10,
+        "total": 80
+      }
+    },
+    {
+      "role": "user",
+      "content": "Как меня зовут?",
+      "tokens": null
+    },
+    {
+      "role": "assistant",
+      "content": "Твоё имя — Игорь.",
+      "tokens": {
+        "prompt": 94,
+        "completion": 10,
+        "total": 104
+      }
+    }
+  ],
+  "context_summary": "",
+  "turns": 6,
+  "last_user_input": "Как меня зовут?",
+  "last_assistant_content": "Твоё имя — Игорь.",
+  "duration_seconds": 40.13060188293457,
+  "total_tokens": 243,
+  "total_prompt_tokens": 194,
+  "total_completion_tokens": 49,
+  "requests": [
+    {
+      "model": "inception/mercury-coder",
+      "endpoint": "chat",
+      "temp": 0.7,
+      "ttft": 1.2910910829999978,
+      "req_time": 1.2910910829999978,
+      "total_time": 40.130274057388306,
+      "tokens": 104,
+      "p_tokens": 94,
+      "c_tokens": 10,
+      "cost_rub": 0.0156
+    }
+  ],
+  "context_strategy": "sliding_window",
+  "sticky_facts": {},
+  "branches": [],
+  "active_branch_id": null
+}
