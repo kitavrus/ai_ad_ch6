@@ -116,12 +116,12 @@ class TestLoadLastSession:
 
     def test_loads_single_session(self, tmp_path, monkeypatch, sample_session):
         monkeypatch.chdir(tmp_path)
-        dialogues = tmp_path / "dialogues"
-        dialogues.mkdir()
-        path = dialogues / "session_20260101T000000Z_gpt-4.json"
+        profile_dir = tmp_path / "dialogues" / "default"
+        profile_dir.mkdir(parents=True)
+        path = profile_dir / "session_20260101T000000Z_gpt-4.json"
         save_session(sample_session, str(path))
 
-        result = load_last_session()
+        result = load_last_session(profile_name="default")
         assert result is not None
         loaded_path, data = result
         assert "session_" in loaded_path
@@ -129,11 +129,11 @@ class TestLoadLastSession:
 
     def test_loads_latest_of_multiple(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        dialogues = tmp_path / "dialogues"
-        dialogues.mkdir()
+        profile_dir = tmp_path / "dialogues" / "default"
+        profile_dir.mkdir(parents=True)
 
         for i, name in enumerate(["session_A.json", "session_B.json", "session_C.json"]):
-            p = dialogues / name
+            p = profile_dir / name
             data = {
                 "dialogue_session_id": f"id_{i}",
                 "created_at": "2026-01-01T00:00:00Z",
@@ -147,16 +147,16 @@ class TestLoadLastSession:
             # Принудительно устанавливаем mtime для надёжной сортировки
             os.utime(p, (i, i))
 
-        result = load_last_session()
+        result = load_last_session(profile_name="default")
         assert result is not None
         _, data = result
         assert data["model"] == "model_2"
 
     def test_returns_none_on_corrupt_json(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        dialogues = tmp_path / "dialogues"
-        dialogues.mkdir()
-        (dialogues / "session_bad.json").write_text("NOT JSON", encoding="utf-8")
+        profile_dir = tmp_path / "dialogues" / "default"
+        profile_dir.mkdir(parents=True)
+        (profile_dir / "session_bad.json").write_text("NOT JSON", encoding="utf-8")
 
-        result = load_last_session()
+        result = load_last_session(profile_name="default")
         assert result is None

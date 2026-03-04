@@ -33,7 +33,7 @@ CONTEXT_SUMMARY_INTERVAL: int = 10  # каждые N сообщений дела
 
 # Директория для сохранения сессий
 DIALOGUES_DIR: str = "dialogues"
-METRICS_DIR: str = "dialogues/metrics"
+DEFAULT_PROFILE: str = "default"
 
 
 # ---------------------------------------------------------------------------

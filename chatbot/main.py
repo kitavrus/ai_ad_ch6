@@ -1,6 +1,7 @@
 """Основной модуль: точка входа и цикл интерактивного диалога."""
 
 import logging
+import os
 import time
 from datetime import datetime
 from typing import Any, List, Optional
@@ -10,6 +11,7 @@ from openai import OpenAI
 from chatbot.cli import config_from_args, get_resume_flag, parse_args, parse_inline_command
 from chatbot.config import (
     API_KEY,
+    DEFAULT_PROFILE,
     DIALOGUES_DIR,
     RUB_PER_USD,
     USD_PER_1K_TOKENS,
@@ -27,11 +29,14 @@ from chatbot.memory_storage import (
     get_memory_stats,
     import_memory_state,
     list_long_term_memories,
+    list_profiles,
     list_working_memories,
     load_long_term,
+    load_profile,
     load_short_term_last,
     load_working_memory,
     save_long_term,
+    save_profile,
     save_short_term,
     save_working_memory,
 )
@@ -228,7 +233,7 @@ def _apply_inline_updates(updates: dict, state: SessionState) -> bool:
             else:
                 state.messages.append(ChatMessage(role="user", content=value))
         elif key == "resume" and value:
-            loaded = load_last_session()
+            loaded = load_last_session(profile_name=state.profile_name)
             if loaded:
                 last_path, last_data = loaded
                 state.session_path = last_path
@@ -327,7 +332,7 @@ def _apply_inline_updates(updates: dict, state: SessionState) -> bool:
             print("--- Конец ---\n")
 
         elif key == "memstats":
-            stats = get_memory_stats()
+            stats = get_memory_stats(profile_name=state.profile_name)
             print("\n--- Статистика памяти ---")
             for mtype, data in stats.items():
                 print(f"  {mtype}: {data['files']} файлов, {data['size_bytes']} байт")
@@ -340,22 +345,22 @@ def _apply_inline_updates(updates: dict, state: SessionState) -> bool:
         elif key == "memsave":
             mem = state.memory
             task_name = mem.working.current_task or "current"
-            path_w = save_working_memory(mem.working.model_dump(), task_name)
-            path_lt = save_long_term(mem.long_term.model_dump())
-            path_st = save_short_term(mem.short_term.model_dump(), state.session_path or "default")
+            path_w = save_working_memory(mem.working.model_dump(), task_name, profile_name=state.profile_name)
+            path_lt = save_long_term(mem.long_term.model_dump(), profile_name=state.profile_name)
+            path_st = save_short_term(mem.short_term.model_dump(), state.session_path or "default", profile_name=state.profile_name)
             print(f"[Память сохранена: рабочая={path_w}, долговременная={path_lt}, краткосрочная={path_st}]")
 
         elif key == "memload":
             mem = state.memory
             task_name = mem.working.current_task or "current"
-            data_w = load_working_memory(task_name)
+            data_w = load_working_memory(task_name, profile_name=state.profile_name)
             if data_w:
                 from chatbot.memory import WorkingMemory
                 mem.working = WorkingMemory(**data_w)
                 print(f"[Рабочая память загружена: задача={mem.working.current_task!r}]")
             else:
                 print("[Рабочая память не найдена]")
-            data_lt = load_long_term()
+            data_lt = load_long_term(profile_name=state.profile_name)
             if data_lt:
                 from chatbot.memory import LongTermMemory
                 mem.long_term = LongTermMemory(**data_lt)
@@ -388,6 +393,105 @@ def _apply_inline_updates(updates: dict, state: SessionState) -> bool:
                     task=state.memory.working.current_task or "untitled",
                 )
                 print("[Решение сохранено в долговременную память]")
+
+        elif key == "profile" and isinstance(value, dict):
+            _profile_action = value.get("action", "show")
+            _profile_arg = value.get("arg", "")
+            _lt = state.memory.long_term
+
+            if _profile_action == "show":
+                p = _lt.profile
+                print(f"\n--- Профиль: {p.name} ---")
+                print(f"  Стиль:      {p.style or '(не задан)'}")
+                print(f"  Формат:     {p.format or '(не задан)'}")
+                print(f"  Ограничения:{p.constraints or '(не заданы)'}")
+                print(f"  Прочее:     {p.custom or '(нет)'}")
+                print(f"  Обновлён:   {p.updated_at}")
+                if not p.is_empty():
+                    print(f"\n  Системный промпт:\n  {_lt.get_profile_prompt()}")
+                print("--- Конец профиля ---\n")
+
+            elif _profile_action == "list":
+                names = list_profiles()
+                if names:
+                    print("\n--- Сохранённые профили ---")
+                    for n in names:
+                        print(f"  {n}")
+                    print("--- Конец списка ---\n")
+                else:
+                    print("Профилей не найдено.")
+
+            elif _profile_action == "name":
+                if _profile_arg:
+                    _lt.profile.name = _profile_arg
+                    print(f"[Имя профиля: {_profile_arg}]")
+
+            elif _profile_action == "style":
+                if "=" in _profile_arg:
+                    k, v = _profile_arg.split("=", 1)
+                    _lt.set_profile_style(k.strip(), v.strip())
+                    print(f"[Стиль добавлен: {k.strip()}={v.strip()}]")
+                else:
+                    print("[profile style: ожидается формат key=value]")
+
+            elif _profile_action == "format":
+                if "=" in _profile_arg:
+                    k, v = _profile_arg.split("=", 1)
+                    _lt.set_profile_format(k.strip(), v.strip())
+                    print(f"[Формат добавлен: {k.strip()}={v.strip()}]")
+                else:
+                    print("[profile format: ожидается формат key=value]")
+
+            elif _profile_action == "constraint":
+                sub_parts = _profile_arg.split(None, 1)
+                sub_op = sub_parts[0].lower() if sub_parts else ""
+                sub_text = sub_parts[1].strip() if len(sub_parts) > 1 else ""
+                if sub_op == "add" and sub_text:
+                    _lt.add_profile_constraint(sub_text)
+                    print(f"[Ограничение добавлено: {sub_text}]")
+                elif sub_op == "del" and sub_text:
+                    _lt.remove_profile_constraint(sub_text)
+                    print(f"[Ограничение удалено: {sub_text}]")
+                else:
+                    print("[profile constraint: ожидается 'add <текст>' или 'del <текст>']")
+
+            elif _profile_action == "save":
+                save_name = _profile_arg or _lt.profile.name or "default"
+                _lt.profile.name = save_name
+                try:
+                    path = save_profile(_lt.profile, save_name)
+                    print(f"[Профиль '{save_name}' сохранён: {os.path.abspath(path)}]")
+                except Exception as exc:
+                    print(f"[Ошибка сохранения профиля: {exc}]")
+
+            elif _profile_action == "load":
+                load_name = _profile_arg or "default"
+                loaded_p = load_profile(load_name)
+                if loaded_p:
+                    _lt.profile = loaded_p
+                    state.profile_name = load_name
+                    # Загружаем историю диалога для нового профиля
+                    loaded_session = load_last_session(profile_name=load_name)
+                    if loaded_session:
+                        last_path, last_data = loaded_session
+                        state.session_path = last_path
+                        state.session_id_metrics = last_path.replace("/", "_").replace(".json", "")
+                        _apply_session_data(last_data, state)
+                        print(f"[Профиль переключён: {load_name}]")
+                        _print_loaded_history(state.messages)
+                    else:
+                        state.messages = []
+                        state.session_path = os.path.join(
+                            DIALOGUES_DIR, load_name,
+                            f"session_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}_{state.model.replace('/', '_')}.json",
+                        )
+                        state.session_id_metrics = state.session_path.replace("/", "_").replace(".json", "")
+                        print(f"[Профиль переключён: {load_name}] (история пуста)")
+                else:
+                    print(f"[Профиль не найден: {load_name}]")
+
+            else:
+                print(f"[Неизвестная подкоманда профиля: {_profile_action}]")
 
     # Если системный промпт задан, но сообщения не начинаются с него — добавляем
     if state.system_prompt and not (
@@ -484,6 +588,8 @@ def main() -> None:
     except (ValueError, TypeError):
         initial_strategy = ContextStrategy.SLIDING_WINDOW
 
+    _profile_name = getattr(args, "profile", None) or DEFAULT_PROFILE
+
     state = SessionState(
         model=cfg.model,
         base_url=cfg.base_url,
@@ -496,11 +602,23 @@ def main() -> None:
         dialogue_start_time=time.time(),
         context_strategy=initial_strategy,
         memory=Memory(),
+        profile_name=_profile_name,
     )
 
-    # Опционально загружаем последнюю сессию
-    if get_resume_flag(args):
-        loaded = load_last_session()
+    # Загружаем профиль пользователя (авто-создаём если не найден)
+    _loaded_profile = load_profile(_profile_name)
+    if _loaded_profile:
+        state.memory.long_term.profile = _loaded_profile
+        print(f"[Профиль загружен: {_profile_name}]")
+    else:
+        state.memory.long_term.profile.name = _profile_name
+        print(f"[Профиль создан: {_profile_name}]")
+        save_profile(state.memory.long_term.profile, _profile_name)
+
+    # Загружаем историю: всегда при явном --profile; при дефолтном — только если --resume
+    _explicit_profile = getattr(args, "profile", None) is not None
+    if get_resume_flag(args) or _explicit_profile:
+        loaded = load_last_session(profile_name=_profile_name)
         if loaded:
             last_path, last_data = loaded
             state.session_path = last_path
@@ -517,10 +635,9 @@ def main() -> None:
 
     # Создаём путь к файлу сессии (если не восстановлено из предыдущей)
     if state.session_path is None:
-        state.session_path = (
-            f"{DIALOGUES_DIR}/session_"
-            f"{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}_"
-            f"{state.model.replace('/', '_')}.json"
+        state.session_path = os.path.join(
+            DIALOGUES_DIR, state.profile_name,
+            f"session_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}_{state.model.replace('/', '_')}.json",
         )
     state.session_id_metrics = state.session_path.replace("/", "_").replace(".json", "")
     state.dialogue_start_time = time.time()
@@ -531,12 +648,16 @@ def main() -> None:
     if state.initial_prompt:
         state.messages.append(ChatMessage(role="user", content=state.initial_prompt))
 
+    print(f"[Профиль: {state.profile_name}]")
     print(f"Введите запрос (type 'exit' чтобы выйти). Стратегия: {state.context_strategy.value}")
     print("Команды стратегий: /strategy <sliding_window|sticky_facts|branching>")
     print("Ветвление: /checkpoint  /branch <имя>  /switch <имя_или_id>  /branches")
     print("Факты:     /showfacts   /setfact <ключ>: <значение>   /delfact <ключ>")
     print("Память:    /memshow  /memstats  /memsave  /memload  /memclear")
-    print("           /settask <задача>  /setpref <ключ>=<значение>  /remember <ключ>=<значение>\n")
+    print("           /settask <задача>  /setpref <ключ>=<значение>  /remember <ключ>=<значение>")
+    print("Профиль:   /profile show | list | save [имя] | load <имя>")
+    print("           /profile name <имя>  /profile style <к>=<в>  /profile format <к>=<в>")
+    print("           /profile constraint add <текст>  /profile constraint del <текст>\n")
 
     while True:
         try:
@@ -567,6 +688,7 @@ def main() -> None:
                         "strategy",
                         "memshow", "memstats", "memsave", "memload", "memclear",
                         "settask", "setpref", "remember",
+                        "profile",
                     )
                 ):
                     print(f"Updated config: {updates}")
@@ -600,6 +722,17 @@ def main() -> None:
             facts=state.sticky_facts,
             active_branch=active_branch,
         )
+
+        # Инжектируем профиль пользователя в системный промпт
+        _profile_text = state.memory.get_profile_prompt()
+        if _profile_text:
+            if api_messages and api_messages[0].get("role") == "system":
+                api_messages[0] = {
+                    "role": "system",
+                    "content": api_messages[0]["content"] + "\n\n" + _profile_text,
+                }
+            else:
+                api_messages.insert(0, {"role": "system", "content": _profile_text})
 
         # Выполняем API-запрос
         try:
@@ -702,7 +835,8 @@ def main() -> None:
             save_session(session, state.session_path)
             try:
                 metric_path = log_request_metric(
-                    metric, state.session_id_metrics, state.request_index
+                    metric, state.session_id_metrics, state.request_index,
+                    profile_name=state.profile_name,
                 )
                 logger.info("Request metrics logged to: %s", metric_path)
             except Exception as metric_exc:

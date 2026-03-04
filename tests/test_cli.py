@@ -281,6 +281,52 @@ class TestParseInlineCommand:
         result = parse_inline_command("  /model=gpt-4  ")
         assert result == {"model": "gpt-4"}
 
+    # --- /profile ---
+
+    def test_profile_show(self):
+        result = parse_inline_command("/profile show")
+        assert result == {"profile": {"action": "show", "arg": ""}}
+
+    def test_profile_show_default(self):
+        result = parse_inline_command("/profile")
+        assert result == {"profile": {"action": "show", "arg": ""}}
+
+    def test_profile_list(self):
+        result = parse_inline_command("/profile list")
+        assert result == {"profile": {"action": "list", "arg": ""}}
+
+    def test_profile_style(self):
+        result = parse_inline_command("/profile style tone=formal")
+        assert result == {"profile": {"action": "style", "arg": "tone=formal"}}
+
+    def test_profile_format(self):
+        result = parse_inline_command("/profile format output=markdown")
+        assert result == {"profile": {"action": "format", "arg": "output=markdown"}}
+
+    def test_profile_constraint_add(self):
+        result = parse_inline_command("/profile constraint add no emojis")
+        assert result == {"profile": {"action": "constraint", "arg": "add no emojis"}}
+
+    def test_profile_constraint_del(self):
+        result = parse_inline_command("/profile constraint del no emojis")
+        assert result == {"profile": {"action": "constraint", "arg": "del no emojis"}}
+
+    def test_profile_save_with_name(self):
+        result = parse_inline_command("/profile save myprofile")
+        assert result == {"profile": {"action": "save", "arg": "myprofile"}}
+
+    def test_profile_save_no_name(self):
+        result = parse_inline_command("/profile save")
+        assert result == {"profile": {"action": "save", "arg": ""}}
+
+    def test_profile_load(self):
+        result = parse_inline_command("/profile load default")
+        assert result == {"profile": {"action": "load", "arg": "default"}}
+
+    def test_profile_name(self):
+        result = parse_inline_command("/profile name Igor")
+        assert result == {"profile": {"action": "name", "arg": "Igor"}}
+
 
 # ---------------------------------------------------------------------------
 # parse_args
@@ -340,3 +386,13 @@ class TestParseArgs:
         monkeypatch.setattr(sys, "argv", ["prog", "--initial-prompt", "Hello!"])
         args = parse_args()
         assert args.initial_prompt == "Hello!"
+
+    def test_profile_flag(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["prog", "--profile", "myprofile"])
+        args = parse_args()
+        assert args.profile == "myprofile"
+
+    def test_profile_flag_default_none(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["prog"])
+        args = parse_args()
+        assert args.profile is None

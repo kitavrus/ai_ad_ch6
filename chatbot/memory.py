@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from chatbot.models import UserProfile
+
 
 # ===========================================================================
 # ТИПЫ ПАМЯТИ
@@ -89,18 +91,18 @@ class WorkingMemory(BaseModel):
 
 class LongTermMemory(BaseModel):
     """Долговременная память: профиль, решения, знания.
-    
+
     Сохраняется между сеансами. Содержит:
     - Пользовательский профиль
     - История решений/действий
     - Факты и знания
     """
-    user_profile: Dict[str, Any] = Field(default_factory=dict)
+    profile: UserProfile = Field(default_factory=UserProfile)
     decisions_log: List[dict] = Field(default_factory=list)
     knowledge_base: Dict[str, str] = Field(default_factory=dict)
     create_at: str = ""
     last_accessed: str = ""
-    
+
     def add_decision(self, task: str, decision: str, context: Optional[Dict[str, Any]] = None) -> None:
         self.decisions_log.append({
             "task": task,
@@ -109,27 +111,60 @@ class LongTermMemory(BaseModel):
             "timestamp": datetime.utcnow().isoformat(),
         })
         self.last_accessed = datetime.utcnow().isoformat()
-    
+
     def add_knowledge(self, key: str, value: str) -> None:
         self.knowledge_base[key] = value
         self.last_accessed = datetime.utcnow().isoformat()
-    
+
     def get_decision_history(self, task: Optional[str] = None) -> List[dict]:
         if not task:
             return self.decisions_log
         return [d for d in self.decisions_log if d["task"] == task]
-    
+
     def get_knowledge(self, key: str) -> Optional[str]:
         return self.knowledge_base.get(key)
-    
+
     def get_profile(self, key: Optional[str] = None) -> Any:
+        """Возвращает значение из custom-поля профиля (обратная совместимость)."""
         if not key:
-            return self.user_profile
-        return self.user_profile.get(key)
-    
+            return self.profile.custom
+        return self.profile.custom.get(key)
+
     def set_profile(self, key: str, value: Any) -> None:
-        self.user_profile[key] = value
+        """Устанавливает значение в custom-поле профиля (обратная совместимость)."""
+        self.profile.custom[key] = value
+        self.profile.updated_at = datetime.utcnow().isoformat()
         self.last_accessed = datetime.utcnow().isoformat()
+
+    def set_profile_style(self, key: str, value: str) -> None:
+        """Устанавливает параметр стиля ответов (например tone=formal)."""
+        self.profile.style[key] = value
+        self.profile.updated_at = datetime.utcnow().isoformat()
+        self.last_accessed = datetime.utcnow().isoformat()
+
+    def set_profile_format(self, key: str, value: str) -> None:
+        """Устанавливает параметр формата вывода (например output=markdown)."""
+        self.profile.format[key] = value
+        self.profile.updated_at = datetime.utcnow().isoformat()
+        self.last_accessed = datetime.utcnow().isoformat()
+
+    def add_profile_constraint(self, text: str) -> None:
+        """Добавляет ограничение/запрет в профиль."""
+        if text not in self.profile.constraints:
+            self.profile.constraints.append(text)
+            self.profile.updated_at = datetime.utcnow().isoformat()
+            self.last_accessed = datetime.utcnow().isoformat()
+
+    def remove_profile_constraint(self, text: str) -> None:
+        """Удаляет ограничение из профиля."""
+        if text in self.profile.constraints:
+            self.profile.constraints.remove(text)
+            self.profile.updated_at = datetime.utcnow().isoformat()
+            self.last_accessed = datetime.utcnow().isoformat()
+
+    def get_profile_prompt(self) -> str:
+        """Возвращает фрагмент системного промпта из профиля."""
+        return self.profile.to_system_prompt()
 
 
 # ===========================================================================
@@ -207,6 +242,10 @@ class Memory(BaseModel):
             context={"timestamp": datetime.utcnow().isoformat()},
         )
     
+    def get_profile_prompt(self) -> str:
+        """Возвращает фрагмент системного промпта из профиля пользователя."""
+        return self.long_term.get_profile_prompt()
+
     def clear_short_term(self) -> None:
         """Очищает краткосрочную память (при завершении сеанса)."""
         self.short_term.clear()

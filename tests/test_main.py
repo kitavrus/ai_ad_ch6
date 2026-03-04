@@ -436,6 +436,7 @@ class TestMain:
             mock_args.system_prompt = None
             mock_args.initial_prompt = None
             mock_args.resume = False
+            mock_args.profile = None
             mock_parse_args.return_value = mock_args
 
             mock_client = MagicMock()
@@ -472,6 +473,7 @@ class TestMain:
             mock_args.system_prompt = None
             mock_args.initial_prompt = None
             mock_args.resume = False
+            mock_args.profile = None
             mock_parse_args.return_value = mock_args
 
             mock_client = MagicMock()
@@ -504,6 +506,7 @@ class TestMain:
             mock_args.system_prompt = None
             mock_args.initial_prompt = None
             mock_args.resume = False
+            mock_args.profile = None
             mock_parse_args.return_value = mock_args
 
             mock_client = MagicMock()
@@ -546,6 +549,7 @@ class TestMain:
             mock_args.system_prompt = None
             mock_args.initial_prompt = None
             mock_args.resume = True
+            mock_args.profile = None
             mock_parse_args.return_value = mock_args
             mock_openai.return_value = MagicMock()
 
@@ -575,6 +579,7 @@ class TestMain:
             mock_args.system_prompt = None
             mock_args.initial_prompt = None
             mock_args.resume = True
+            mock_args.profile = None
             mock_parse_args.return_value = mock_args
             mock_openai.return_value = MagicMock()
 
@@ -616,6 +621,7 @@ class TestMain:
             mock_args.system_prompt = None
             mock_args.initial_prompt = None
             mock_args.resume = False
+            mock_args.profile = None
             mock_parse_args.return_value = mock_args
 
             mock_client = MagicMock()
@@ -658,6 +664,7 @@ class TestMain:
             mock_args.system_prompt = None
             mock_args.initial_prompt = None
             mock_args.resume = False
+            mock_args.profile = None
             mock_parse_args.return_value = mock_args
 
             mock_client = MagicMock()
@@ -699,6 +706,7 @@ class TestMain:
             mock_args.system_prompt = None
             mock_args.initial_prompt = None
             mock_args.resume = False
+            mock_args.profile = None
             mock_parse_args.return_value = mock_args
 
             mock_client = MagicMock()
@@ -738,6 +746,7 @@ class TestMain:
             mock_args.system_prompt = None
             mock_args.initial_prompt = None
             mock_args.resume = False
+            mock_args.profile = None
             mock_parse_args.return_value = mock_args
 
             mock_client = MagicMock()
@@ -783,6 +792,7 @@ class TestMain:
             mock_args.system_prompt = None
             mock_args.initial_prompt = None
             mock_args.resume = False
+            mock_args.profile = None
             mock_parse_args.return_value = mock_args
 
             mock_client = MagicMock()
@@ -831,6 +841,7 @@ class TestPrintLoadedHistoryEdgeCases:
             mock_args.system_prompt = None
             mock_args.initial_prompt = None
             mock_args.resume = False
+            mock_args.profile = None
             mock_parse_args.return_value = mock_args
             mock_openai.return_value = MagicMock()
 
@@ -860,6 +871,7 @@ class TestPrintLoadedHistoryEdgeCases:
             mock_args.system_prompt = None
             mock_args.initial_prompt = None
             mock_args.resume = False
+            mock_args.profile = None
             mock_parse_args.return_value = mock_args
             mock_openai.return_value = MagicMock()
 
@@ -889,6 +901,7 @@ class TestPrintLoadedHistoryEdgeCases:
             mock_args.system_prompt = None
             mock_args.initial_prompt = None
             mock_args.resume = False
+            mock_args.profile = None
             mock_parse_args.return_value = mock_args
             mock_openai.return_value = MagicMock()
 
@@ -918,6 +931,7 @@ class TestPrintLoadedHistoryEdgeCases:
             mock_args.system_prompt = None
             mock_args.initial_prompt = None
             mock_args.resume = False
+            mock_args.profile = None
             mock_parse_args.return_value = mock_args
 
             mock_client = MagicMock()
@@ -949,6 +963,7 @@ class TestPrintLoadedHistoryEdgeCases:
             mock_args.system_prompt = None
             mock_args.initial_prompt = None
             mock_args.resume = True
+            mock_args.profile = None
             mock_parse_args.return_value = mock_args
             mock_openai.return_value = MagicMock()
 
@@ -983,6 +998,7 @@ class TestPrintLoadedHistoryEdgeCases:
             mock_args.system_prompt = "Be helpful."
             mock_args.initial_prompt = "Hello AI!"
             mock_args.resume = False
+            mock_args.profile = None
             mock_parse_args.return_value = mock_args
 
             mock_client = MagicMock()
@@ -991,3 +1007,172 @@ class TestPrintLoadedHistoryEdgeCases:
 
             from chatbot.main import main
             main()
+
+
+# ---------------------------------------------------------------------------
+# Profile personalization tests
+# ---------------------------------------------------------------------------
+
+
+class TestProfileInlineCommands:
+    """Tests for /profile subcommands in _apply_inline_updates."""
+
+    def _make_state_with_memory(self, **kwargs) -> SessionState:
+        from chatbot.memory import Memory
+
+        defaults = {
+            "model": "gpt-4",
+            "base_url": "https://api.example.com",
+            "temperature": 0.7,
+            "top_p": 0.9,
+            "top_k": 50,
+            "dialogue_start_time": time.time(),
+            "memory": Memory(),
+        }
+        defaults.update(kwargs)
+        return SessionState(**defaults)
+
+    def test_profile_style_sets_style(self):
+        state = self._make_state_with_memory()
+        _apply_inline_updates({"profile": {"action": "style", "arg": "tone=formal"}}, state)
+        assert state.memory.long_term.profile.style["tone"] == "formal"
+
+    def test_profile_format_sets_format(self):
+        state = self._make_state_with_memory()
+        _apply_inline_updates({"profile": {"action": "format", "arg": "output=markdown"}}, state)
+        assert state.memory.long_term.profile.format["output"] == "markdown"
+
+    def test_profile_constraint_add(self):
+        state = self._make_state_with_memory()
+        _apply_inline_updates({"profile": {"action": "constraint", "arg": "add no emojis"}}, state)
+        assert "no emojis" in state.memory.long_term.profile.constraints
+
+    def test_profile_constraint_del(self):
+        state = self._make_state_with_memory()
+        state.memory.long_term.add_profile_constraint("no emojis")
+        _apply_inline_updates({"profile": {"action": "constraint", "arg": "del no emojis"}}, state)
+        assert "no emojis" not in state.memory.long_term.profile.constraints
+
+    def test_profile_name_sets_name(self):
+        state = self._make_state_with_memory()
+        _apply_inline_updates({"profile": {"action": "name", "arg": "Alice"}}, state)
+        assert state.memory.long_term.profile.name == "Alice"
+
+    def test_profile_save_and_load(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        state = self._make_state_with_memory()
+        state.memory.long_term.set_profile_style("tone", "formal")
+        _apply_inline_updates({"profile": {"action": "save", "arg": "test_profile"}}, state)
+
+        state2 = self._make_state_with_memory()
+        _apply_inline_updates({"profile": {"action": "load", "arg": "test_profile"}}, state2)
+        assert state2.memory.long_term.profile.style["tone"] == "formal"
+
+    def test_profile_load_missing(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.chdir(tmp_path)
+        state = self._make_state_with_memory()
+        _apply_inline_updates({"profile": {"action": "load", "arg": "nonexistent"}}, state)
+        out = capsys.readouterr().out
+        assert "nonexistent" in out
+
+    def test_profile_show_prints_profile(self, capsys):
+        state = self._make_state_with_memory()
+        state.memory.long_term.set_profile_style("tone", "formal")
+        _apply_inline_updates({"profile": {"action": "show", "arg": ""}}, state)
+        out = capsys.readouterr().out
+        assert "tone" in out
+        assert "formal" in out
+
+    def test_profile_load_switches_profile_name(self, tmp_path, monkeypatch):
+        """При /profile load state.profile_name обновляется."""
+        monkeypatch.chdir(tmp_path)
+        state = self._make_state_with_memory()
+        _apply_inline_updates({"profile": {"action": "save", "arg": "bob"}}, state)
+
+        state2 = self._make_state_with_memory()
+        assert state2.profile_name == "default"
+        _apply_inline_updates({"profile": {"action": "load", "arg": "bob"}}, state2)
+        assert state2.profile_name == "bob"
+
+    def test_profile_load_restores_session_history(self, tmp_path, monkeypatch):
+        """При /profile load загружается история диалога выбранного профиля."""
+        monkeypatch.chdir(tmp_path)
+        from chatbot.models import DialogueSession
+        from chatbot.storage import save_session
+
+        # Создаём профиль и кладём сессию для "alice"
+        state = self._make_state_with_memory()
+        _apply_inline_updates({"profile": {"action": "save", "arg": "alice"}}, state)
+        profile_dir = tmp_path / "dialogues" / "alice"
+        profile_dir.mkdir(parents=True, exist_ok=True)
+        alice_session = DialogueSession(
+            dialogue_session_id="alice_test",
+            created_at="2026-01-01T00:00:00Z",
+            model="gpt-4",
+            base_url="https://api.example.com",
+            messages=[{"role": "user", "content": "Сообщение Алисы"}],
+        )
+        save_session(alice_session, str(profile_dir / "session_alice.json"))
+
+        # Переключаем профиль из другой сессии
+        state2 = self._make_state_with_memory()
+        _apply_inline_updates({"profile": {"action": "load", "arg": "alice"}}, state2)
+        assert state2.profile_name == "alice"
+        assert any(m.content == "Сообщение Алисы" for m in state2.messages)
+
+    def test_profile_load_empty_history_clears_messages(self, tmp_path, monkeypatch):
+        """При /profile load нового профиля (без сессий) история очищается."""
+        monkeypatch.chdir(tmp_path)
+        state = self._make_state_with_memory()
+        from chatbot.models import ChatMessage
+        state.messages = [ChatMessage(role="user", content="старое сообщение")]
+        _apply_inline_updates({"profile": {"action": "save", "arg": "newuser"}}, state)
+
+        state2 = self._make_state_with_memory()
+        state2.messages = [ChatMessage(role="user", content="чужое сообщение")]
+        _apply_inline_updates({"profile": {"action": "load", "arg": "newuser"}}, state2)
+        # История должна очиститься — нет сессии для newuser
+        assert all(m.content != "чужое сообщение" for m in state2.messages)
+
+    def test_main_profile_flag_auto_resumes(self, monkeypatch, tmp_path, capsys):
+        """--profile автоматически загружает последнюю сессию профиля без --resume."""
+        monkeypatch.chdir(tmp_path)
+
+        mock_data = {
+            "model": "gpt-4",
+            "base_url": "https://api.example.com",
+            "messages": [{"role": "user", "content": "История Игоря"}],
+            "total_tokens": 5,
+            "total_prompt_tokens": 3,
+            "total_completion_tokens": 2,
+            "duration_seconds": 1.0,
+            "context_summary": "",
+        }
+
+        with patch("chatbot.main.API_KEY", "fake-key"), \
+             patch("chatbot.main.parse_args") as mock_parse_args, \
+             patch("chatbot.main.OpenAI") as mock_openai, \
+             patch("chatbot.main.load_last_session",
+                   return_value=("dialogues/Igor/session_x.json", mock_data)), \
+             patch("chatbot.main._print_loaded_history") as mock_print_hist, \
+             patch("builtins.input", side_effect=EOFError):
+
+            mock_args = MagicMock()
+            mock_args.model = None
+            mock_args.base_url = None
+            mock_args.max_tokens = None
+            mock_args.temperature = None
+            mock_args.top_p = None
+            mock_args.top_k = None
+            mock_args.system_prompt = None
+            mock_args.initial_prompt = None
+            mock_args.resume = False
+            mock_args.profile = "Igor"  # явно задан профиль
+            mock_parse_args.return_value = mock_args
+            mock_openai.return_value = MagicMock()
+
+            from chatbot.main import main
+            main()
+
+        # _print_loaded_history должен был вызваться — история загружена
+        mock_print_hist.assert_called_once()

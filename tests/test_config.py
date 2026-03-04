@@ -9,11 +9,11 @@ from chatbot.config import (
     CONTEXT_SUMMARY_INTERVAL,
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL,
+    DEFAULT_PROFILE,
     DEFAULT_TEMPERATURE,
     DEFAULT_TOP_K,
     DEFAULT_TOP_P,
     DIALOGUES_DIR,
-    METRICS_DIR,
     RUB_PER_USD,
     USD_PER_1K_TOKENS,
     SessionConfig,
@@ -54,8 +54,8 @@ class TestConstants:
     def test_dialogues_dir(self):
         assert DIALOGUES_DIR == "dialogues"
 
-    def test_metrics_dir(self):
-        assert METRICS_DIR == "dialogues/metrics"
+    def test_default_profile(self):
+        assert DEFAULT_PROFILE == "default"
 
 
 class TestSessionConfig:

@@ -136,7 +136,7 @@ class TestWorkingMemory:
 class TestLongTermMemory:
     def test_defaults(self):
         lt = LongTermMemory()
-        assert lt.user_profile == {}
+        assert lt.profile.is_empty()
         assert lt.decisions_log == []
         assert lt.knowledge_base == {}
 
@@ -170,7 +170,7 @@ class TestLongTermMemory:
     def test_set_profile(self):
         lt = LongTermMemory()
         lt.set_profile("name", "Alice")
-        assert lt.user_profile["name"] == "Alice"
+        assert lt.profile.custom["name"] == "Alice"
 
     def test_get_profile_all(self):
         lt = LongTermMemory()
@@ -208,6 +208,51 @@ class TestLongTermMemory:
         lt = LongTermMemory()
         lt.add_knowledge("k", "v")
         assert lt.last_accessed != ""
+
+    def test_set_profile_style(self):
+        lt = LongTermMemory()
+        lt.set_profile_style("tone", "formal")
+        assert lt.profile.style["tone"] == "formal"
+
+    def test_set_profile_format(self):
+        lt = LongTermMemory()
+        lt.set_profile_format("output", "markdown")
+        assert lt.profile.format["output"] == "markdown"
+
+    def test_add_profile_constraint(self):
+        lt = LongTermMemory()
+        lt.add_profile_constraint("never use emojis")
+        assert "never use emojis" in lt.profile.constraints
+
+    def test_add_profile_constraint_no_duplicates(self):
+        lt = LongTermMemory()
+        lt.add_profile_constraint("rule")
+        lt.add_profile_constraint("rule")
+        assert lt.profile.constraints.count("rule") == 1
+
+    def test_remove_profile_constraint(self):
+        lt = LongTermMemory()
+        lt.add_profile_constraint("rule")
+        lt.remove_profile_constraint("rule")
+        assert "rule" not in lt.profile.constraints
+
+    def test_get_profile_prompt_empty(self):
+        lt = LongTermMemory()
+        assert lt.get_profile_prompt() == ""
+
+    def test_get_profile_prompt_with_style(self):
+        lt = LongTermMemory()
+        lt.set_profile_style("tone", "formal")
+        prompt = lt.get_profile_prompt()
+        assert "Style:" in prompt
+        assert "tone=formal" in prompt
+
+    def test_get_profile_prompt_with_constraints(self):
+        lt = LongTermMemory()
+        lt.add_profile_constraint("no emojis")
+        prompt = lt.get_profile_prompt()
+        assert "Constraints:" in prompt
+        assert "no emojis" in prompt
 
 
 # ===========================================================================
@@ -261,7 +306,7 @@ class TestMemory:
     def test_add_to_long_term_profile(self):
         m = Memory()
         m.add_to_long_term(profile_key="name", profile_value="Igor")
-        assert m.long_term.user_profile["name"] == "Igor"
+        assert m.long_term.profile.custom["name"] == "Igor"
 
     def test_get_short_term_context(self):
         m = Memory()
@@ -321,7 +366,7 @@ class TestMemory:
         m2.load_full_state(state)
         assert len(m2.short_term.messages) == 1
         assert m2.working.current_task == "task1"
-        assert m2.long_term.user_profile["name"] == "Alice"
+        assert m2.long_term.profile.custom["name"] == "Alice"
 
     def test_load_full_state_partial(self):
         m = Memory()
@@ -347,6 +392,18 @@ class TestMemory:
         # долговременная
         assert m.long_term.knowledge_base["key"] == "value"
         assert len(m.short_term.messages) == 1
+
+    def test_get_profile_prompt_empty(self):
+        m = Memory()
+        assert m.get_profile_prompt() == ""
+
+    def test_get_profile_prompt_with_preferences(self):
+        m = Memory()
+        m.long_term.set_profile_style("tone", "concise")
+        m.long_term.add_profile_constraint("no emojis")
+        prompt = m.get_profile_prompt()
+        assert "tone=concise" in prompt
+        assert "no emojis" in prompt
 
 
 # ===========================================================================
@@ -413,9 +470,9 @@ class TestMemoryStorage:
         monkeypatch.chdir(tmp_path)
         from chatbot.memory_storage import load_short_term_last, save_short_term
         data = {"messages": [{"role": "user", "content": "hi"}], "session_id": "s1"}
-        path = save_short_term(data, "session_abc")
+        path = save_short_term(data, "session_abc", profile_name="test")
         assert os.path.exists(path)
-        loaded = load_short_term_last("session_abc")
+        loaded = load_short_term_last("session_abc", profile_name="test")
         assert loaded is not None
         assert loaded["messages"][0]["content"] == "hi"
 
@@ -424,9 +481,9 @@ class TestMemoryStorage:
         from chatbot.memory_storage import load_working_memory, save_working_memory
         data = {"current_task": "deploy", "task_status": "in_progress", "task_context": {},
                 "recent_actions": [], "user_preferences": {}, "created_at": "", "updated_at": ""}
-        path = save_working_memory(data, "deploy")
+        path = save_working_memory(data, "deploy", profile_name="test")
         assert os.path.exists(path)
-        loaded = load_working_memory("deploy")
+        loaded = load_working_memory("deploy", profile_name="test")
         assert loaded is not None
         assert loaded["current_task"] == "deploy"
 
@@ -434,26 +491,26 @@ class TestMemoryStorage:
         monkeypatch.chdir(tmp_path)
         from chatbot.memory_storage import load_long_term, save_long_term
         data = {"user_profile": {"name": "Alice"}, "decisions_log": [], "knowledge_base": {}, "create_at": "", "last_accessed": ""}
-        path = save_long_term(data, "default")
+        path = save_long_term(data, "default", profile_name="test")
         assert os.path.exists(path)
-        loaded = load_long_term("default")
+        loaded = load_long_term("default", profile_name="test")
         assert loaded is not None
         assert loaded["user_profile"]["name"] == "Alice"
 
     def test_load_short_term_returns_none_missing(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         from chatbot.memory_storage import load_short_term_last
-        assert load_short_term_last("nonexistent") is None
+        assert load_short_term_last("nonexistent", profile_name="test") is None
 
     def test_load_working_memory_returns_none_missing(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         from chatbot.memory_storage import load_working_memory
-        assert load_working_memory("nonexistent") is None
+        assert load_working_memory("nonexistent", profile_name="test") is None
 
     def test_load_long_term_returns_none_missing(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         from chatbot.memory_storage import load_long_term
-        assert load_long_term("nonexistent") is None
+        assert load_long_term("nonexistent", profile_name="test") is None
 
     def test_export_and_import_state(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -462,7 +519,7 @@ class TestMemoryStorage:
         wm = {"current_task": "x", "task_status": "new", "task_context": {},
               "recent_actions": [], "user_preferences": {}, "created_at": "", "updated_at": ""}
         lt = {"user_profile": {}, "decisions_log": [], "knowledge_base": {}, "create_at": "", "last_accessed": ""}
-        path = export_memory_state(st, wm, lt)
+        path = export_memory_state(st, wm, lt, profile_name="test")
         assert os.path.exists(path)
         loaded_st, loaded_wm, loaded_lt = import_memory_state(path)
         assert loaded_st == st
@@ -472,7 +529,7 @@ class TestMemoryStorage:
     def test_get_memory_stats_empty(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         from chatbot.memory_storage import get_memory_stats
-        stats = get_memory_stats()
+        stats = get_memory_stats(profile_name="test")
         assert "short_term" in stats
         assert "working" in stats
         assert "long_term" in stats
@@ -484,7 +541,7 @@ class TestMemoryStorage:
         from chatbot.memory_storage import get_memory_stats, save_working_memory
         data = {"current_task": "x", "task_status": "new", "task_context": {},
                 "recent_actions": [], "user_preferences": {}, "created_at": "", "updated_at": ""}
-        save_working_memory(data, "t1")
-        save_working_memory(data, "t2")
-        stats = get_memory_stats()
+        save_working_memory(data, "t1", profile_name="test")
+        save_working_memory(data, "t2", profile_name="test")
+        stats = get_memory_stats(profile_name="test")
         assert stats["working"]["files"] == 2

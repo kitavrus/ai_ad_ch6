@@ -71,6 +71,12 @@ def parse_args() -> argparse.Namespace:
         default=ContextStrategy.SLIDING_WINDOW.value,
         help="Стратегия управления контекстом",
     )
+    parser.add_argument(
+        "--profile",
+        default=None,
+        metavar="NAME",
+        help="Имя профиля пользователя для загрузки (из dialogues/memory/profiles/)",
+    )
     return parser.parse_args()
 
 
@@ -150,6 +156,15 @@ def parse_inline_command(line: str) -> dict:
     payload = cmd[1:].strip()
     if not payload:
         return {}
+
+    # Специальная обработка /profile — аргумент может содержать '='
+    _first_word = payload.split(None, 1)[0].lower()
+    if _first_word == "profile":
+        _rest = payload[len("profile"):].strip()
+        _sub_parts = _rest.split(None, 1)
+        _sub_cmd = _sub_parts[0].lower() if _sub_parts else "show"
+        _sub_arg = _sub_parts[1].strip() if len(_sub_parts) > 1 else ""
+        return {"profile": {"action": _sub_cmd, "arg": _sub_arg}}
 
     # Разбиваем на ключ и значение
     if "=" in payload:
@@ -269,6 +284,23 @@ def parse_inline_command(line: str) -> dict:
         # /remember key=value  or  /remember decision text
         if value.strip():
             updates["remember"] = value.strip()
+
+    # --- Управление профилем пользователя ---
+    elif key == "profile":
+        # Субкоманды:
+        #   /profile show                  — показать текущий профиль
+        #   /profile list                  — список сохранённых профилей
+        #   /profile name <val>            — задать имя профиля
+        #   /profile style <k>=<v>         — стиль (тон, краткость, язык)
+        #   /profile format <k>=<v>        — формат вывода
+        #   /profile constraint add <text> — добавить ограничение
+        #   /profile constraint del <text> — удалить ограничение
+        #   /profile save [name]           — сохранить профиль
+        #   /profile load <name>           — загрузить профиль по имени
+        sub_parts = value.strip().split(None, 1)
+        sub_cmd = sub_parts[0].lower() if sub_parts else "show"
+        sub_arg = sub_parts[1].strip() if len(sub_parts) > 1 else ""
+        updates["profile"] = {"action": sub_cmd, "arg": sub_arg}
 
     # Устаревшие варианты — перенаправляем
     elif key == "memory":

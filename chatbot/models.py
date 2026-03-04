@@ -1,6 +1,7 @@
 """Pydantic-модели данных: сообщения, метрики, сессия."""
 
 import enum
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
@@ -79,6 +80,52 @@ class StickyFacts(BaseModel):
 
     def to_list(self) -> List[Dict[str, str]]:
         return [{"key": k, "value": v} for k, v in self.facts.items()]
+
+
+# ---------------------------------------------------------------------------
+# Профиль пользователя
+# ---------------------------------------------------------------------------
+
+
+class UserProfile(BaseModel):
+    """Профиль пользователя с персональными предпочтениями."""
+
+    name: str = "default"
+    style: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Стиль ответов: тон, краткость, язык. Например: tone=formal, verbosity=concise",
+    )
+    format: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Формат вывода: output=markdown, code_blocks=always и т.п.",
+    )
+    constraints: List[str] = Field(
+        default_factory=list,
+        description="Ограничения/запреты: 'never use emojis', 'respond in Russian' и т.п.",
+    )
+    custom: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Произвольные дополнительные предпочтения",
+    )
+    created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+    updated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+
+    def to_system_prompt(self) -> str:
+        """Формирует фрагмент системного промпта из предпочтений профиля."""
+        parts = []
+        if self.style:
+            parts.append("Style: " + "; ".join(f"{k}={v}" for k, v in self.style.items()))
+        if self.format:
+            parts.append("Format: " + "; ".join(f"{k}={v}" for k, v in self.format.items()))
+        if self.constraints:
+            parts.append("Constraints: " + "; ".join(self.constraints))
+        if self.custom:
+            parts.append("Extra: " + "; ".join(f"{k}={v}" for k, v in self.custom.items()))
+        return "\n".join(parts)
+
+    def is_empty(self) -> bool:
+        """Возвращает True, если в профиле нет ни одного предпочтения."""
+        return not any([self.style, self.format, self.constraints, self.custom])
 
 
 # ---------------------------------------------------------------------------
@@ -188,5 +235,6 @@ class SessionState(BaseModel):
     active_branch_id: Optional[str] = None
     last_checkpoint: Optional[DialogueCheckpoint] = None
     memory: Any = Field(default=None, description="Объект Memory (три типа памяти)")
+    profile_name: str = Field(default="default", description="Активный профиль пользователя")
 
     model_config = {"arbitrary_types_allowed": True}
