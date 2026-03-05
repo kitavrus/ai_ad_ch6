@@ -2,10 +2,8 @@
 
 import argparse
 import logging
-from typing import Optional
 
 from chatbot.config import (
-    BASE_URL,
     DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL,
     DEFAULT_TEMPERATURE,

@@ -1,13 +1,12 @@
 """Модель памяти: три типа - краткосрочная, рабочая, долговременная."""
 
-import enum
 from datetime import datetime
+import enum
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
 from chatbot.models import UserProfile
-
 
 # ===========================================================================
 # ТИПЫ ПАМЯТИ
@@ -16,31 +15,31 @@ from chatbot.models import UserProfile
 
 class ShortTermMemory(BaseModel):
     """Краткосрочная память: текущий диалог (внутри одного сеанса).
-    
+
     Хранит сообщения текущей сессии, удаляются при завершении сеанса.
     """
     messages: List[dict] = Field(default_factory=list)
     session_id: str = ""
     created_at: str = ""
     expires_at: Optional[str] = None
-    
+
     def add_message(self, role: str, content: str) -> None:
         self.messages.append({
             "role": role,
             "content": content,
             "timestamp": datetime.utcnow().isoformat(),
         })
-    
+
     def get_recent(self, n: int = 10) -> List[dict]:
         return self.messages[-n:] if len(self.messages) > n else self.messages
-    
+
     def clear(self) -> None:
         self.messages = []
 
 
 class WorkingMemory(BaseModel):
     """Рабочая память: данные текущей задачи.
-    
+
     Хранит контекст выполняемой задачи (цели, статус, метаданные).
     Может быть сохранена в долговременную память.
     """
@@ -51,27 +50,27 @@ class WorkingMemory(BaseModel):
     user_preferences: Dict[str, Any] = Field(default_factory=dict)
     created_at: str = ""
     updated_at: str = ""
-    
+
     def set_task(self, task: str, context: Optional[Dict[str, Any]] = None) -> None:
         self.current_task = task
         self.task_status = "in_progress"
         if context:
             self.task_context.update(context)
         self.updated_at = datetime.utcnow().isoformat()
-    
+
     def update_status(self, status: str) -> None:
         self.task_status = status
         self.updated_at = datetime.utcnow().isoformat()
-    
+
     def add_action(self, action: str) -> None:
         self.recent_actions.append(action)
         if len(self.recent_actions) > 10:
             self.recent_actions = self.recent_actions[-10:]
-    
+
     def set_preference(self, key: str, value: Any) -> None:
         self.user_preferences[key] = value
         self.updated_at = datetime.utcnow().isoformat()
-    
+
     def to_short_term_snapshot(self) -> ShortTermMemory:
         """ Преобразует часть рабочей памяти в краткосрочную (для диалога). """
         snapshot = ShortTermMemory(
@@ -83,7 +82,7 @@ class WorkingMemory(BaseModel):
             snapshot.add_message("user", f"Текущая задача: {self.current_task}")
         if self.user_preferences:
             snapshot.add_message(
-                "assistant", 
+                "assistant",
                 f"Мои предпочтения: {self.user_preferences}"
             )
         return snapshot
@@ -100,7 +99,7 @@ class LongTermMemory(BaseModel):
     profile: UserProfile = Field(default_factory=UserProfile)
     decisions_log: List[dict] = Field(default_factory=list)
     knowledge_base: Dict[str, str] = Field(default_factory=dict)
-    create_at: str = ""
+    created_at: str = ""
     last_accessed: str = ""
 
     def add_decision(self, task: str, decision: str, context: Optional[Dict[str, Any]] = None) -> None:
@@ -174,21 +173,21 @@ class LongTermMemory(BaseModel):
 
 class Memory(BaseModel):
     """Центральный класс управления памятью.
-    
+
     Содержит три типа памяти и предоставляет единый интерфейс для работы с ними.
     """
     short_term: ShortTermMemory = Field(default_factory=ShortTermMemory)
     working: WorkingMemory = Field(default_factory=WorkingMemory)
     long_term: LongTermMemory = Field(default_factory=LongTermMemory)
-    
+
     def add_user_message(self, content: str) -> None:
         """Добавляет сообщение пользователя в краткосрочную память."""
         self.short_term.add_message("user", content)
-    
+
     def add_assistant_message(self, content: str) -> None:
         """Добавляет ответ ассистента в краткосрочную память."""
         self.short_term.add_message("assistant", content)
-    
+
     def add_to_working_memory(
         self,
         task: Optional[str] = None,
@@ -203,7 +202,7 @@ class Memory(BaseModel):
             self.working.add_action(action)
         if preference and preference_value is not None:
             self.working.set_preference(preference, preference_value)
-    
+
     def add_to_long_term(
         self,
         decision: Optional[str] = None,
@@ -220,11 +219,11 @@ class Memory(BaseModel):
             self.long_term.add_knowledge(knowledge_key, knowledge_value)
         if profile_key and profile_value is not None:
             self.long_term.set_profile(profile_key, profile_value)
-    
+
     def get_short_term_context(self, n: int = 10) -> List[dict]:
         """Возвращает последние n сообщений из краткосрочной памяти."""
         return self.short_term.get_recent(n)
-    
+
     def get_working_context(self) -> dict:
         """Возвращает текущую рабочую память для контекста."""
         context = {}
@@ -232,7 +231,7 @@ class Memory(BaseModel):
             context["current_task"] = self.working.current_task
         context["user_preferences"] = self.working.user_preferences
         return context
-    
+
     def save_working_to_long_term(self, task_name: Optional[str] = None) -> None:
         """Сохраняет текущее состояние рабочей памяти в долговременную."""
         task = task_name or self.working.current_task or "untitled_task"
@@ -241,7 +240,7 @@ class Memory(BaseModel):
             decision=f"Working memory saved: {self.working.model_dump()}",
             context={"timestamp": datetime.utcnow().isoformat()},
         )
-    
+
     def get_profile_prompt(self) -> str:
         """Возвращает фрагмент системного промпта из профиля пользователя."""
         return self.long_term.get_profile_prompt()
@@ -249,7 +248,7 @@ class Memory(BaseModel):
     def clear_short_term(self) -> None:
         """Очищает краткосрочную память (при завершении сеанса)."""
         self.short_term.clear()
-    
+
     def get_full_state(self) -> dict:
         """Возвращает полное состояние памяти."""
         return {
@@ -257,7 +256,7 @@ class Memory(BaseModel):
             "working": self.working.model_dump(),
             "long_term": self.long_term.model_dump(),
         }
-    
+
     def load_full_state(self, state: dict) -> None:
         """Загружает полное состояние памяти."""
         if "short_term" in state:
@@ -275,7 +274,7 @@ class Memory(BaseModel):
 
 class MemoryFactor(str, enum.Enum):
     """Категории информации для извлечения в долговременную память."""
-    
+
     PREFERENCE = "preference"
     DECISION = "decision"
     FACT = "fact"
@@ -288,23 +287,23 @@ def extract_memory_factors(
     working_memory: WorkingMemory,
 ) -> List[Dict[str, Any]]:
     """Извлекает важные факторы из диалога для сохранения в долговременную память.
-    
+
     Args:
         user_content: Сообщение пользователя.
         assistant_content: Ответ ассистента.
         working_memory: Текущая рабочая память.
-    
+
     Returns:
         Список извлечённых факторов с типом и содержанием.
     """
     factors: List[Dict[str, Any]] = []
-    
+
     # Проверка на упоминание предпочтений
     preference_keywords = [
-        "prefer", "лучше", "предпочитаю", "喜欢", "Хочу", "не люблю", 
+        "prefer", "лучше", "предпочитаю", "喜欢", "Хочу", "не люблю",
         "чаще", "регулярно", "всегда", "никогда"
     ]
-    
+
     for keyword in preference_keywords:
         if keyword in user_content.lower() or keyword in assistant_content.lower():
             factors.append({
@@ -313,13 +312,13 @@ def extract_memory_factors(
                 "source": "user",
             })
             break
-    
+
     # Проверка на факты
     fact_keywords = [
-        "факт", "истина", "действительно", "на самом деле", 
+        "факт", "истина", "действительно", "на самом деле",
         "важно", "запомни", "запомни это"
     ]
-    
+
     for keyword in fact_keywords:
         if keyword in user_content.lower() or "это факт" in assistant_content.lower():
             factors.append({
@@ -328,7 +327,7 @@ def extract_memory_factors(
                 "source": "user",
             })
             break
-    
+
     # Проверка на принятые решения
     if working_memory.current_task and "решение" in assistant_content.lower():
         factors.append({
@@ -336,7 +335,7 @@ def extract_memory_factors(
             "content": f"Decision for task '{working_memory.current_task}': {assistant_content[:100]}",
             "source": "assistant",
         })
-    
+
     # Суммаризация (если пользователь просит)
     if "резюме" in user_content.lower() or "копию" in user_content.lower():
         factors.append({
@@ -344,5 +343,5 @@ def extract_memory_factors(
             "content": f"Summary request: {user_content}",
             "source": "user",
         })
-    
+
     return factors

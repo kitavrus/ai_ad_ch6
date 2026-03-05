@@ -1,11 +1,10 @@
 """Pydantic-модели данных: сообщения, метрики, сессия."""
 
-import enum
 from datetime import datetime
+import enum
 from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, Field
-
 
 # ---------------------------------------------------------------------------
 # Стратегии управления контекстом

@@ -75,7 +75,7 @@ def load_last_session(profile_name: str = DEFAULT_PROFILE) -> Optional[Tuple[str
         if not paths:
             return None
         last_path = paths[-1]
-        with open(last_path, "r", encoding="utf-8") as f:
+        with open(last_path, encoding="utf-8") as f:
             data = json.load(f)
         return last_path, data
     except Exception as exc:

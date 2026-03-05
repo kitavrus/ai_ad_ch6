@@ -1,0 +1,81 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+# ---------------------------------------------------------------------------
+# Ruff — replaces flake8, isort, pyupgrade, pep8-naming, flake8-bugbear
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py39"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes (unused imports, undefined names)
+    "I",   # isort (import order)
+    "UP",  # pyupgrade (modern Python syntax)
+    "B",   # flake8-bugbear (likely bugs / design issues)
+    "C4",  # flake8-comprehensions (simplify comprehensions)
+    "SIM", # flake8-simplify
+    "N",   # pep8-naming
+    "RUF", # ruff-specific rules
+]
+ignore = [
+    "E501",   # line too long — handled by formatter
+    "B008",   # function call in default argument (common in FastAPI/Pydantic)
+    "SIM108", # use ternary operator — sometimes if/else is clearer
+    "N806",   # variable in function should be lowercase (false positives)
+    "RUF012", # mutable class attribute — Pydantic uses this pattern
+    # Python 3.9 compatibility: keep typing.List/Dict/Optional until 3.10+
+    "UP006",  # non-pep585-annotation (list/dict builtins as generic)
+    "UP035",  # deprecated-import (typing.List → list)
+    "UP045",  # non-pep604-annotation-optional (Optional[X] → X | None)
+    # Russian codebase: Cyrillic/ambiguous unicode is intentional
+    "RUF001", # ambiguous-unicode-character-string
+    "RUF002", # ambiguous-unicode-character-docstring
+    "RUF003", # ambiguous-unicode-character-comment
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["chatbot"]
+force-sort-within-sections = true
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+
+# ---------------------------------------------------------------------------
+# Mypy — static type checker
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.9"
+ignore_missing_imports = true
+warn_return_any = true
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+strict_equality = true
+# Don't enforce strict mode for whole codebase — apply progressively
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true
+
+# ---------------------------------------------------------------------------
+# Black — code formatter
+# ---------------------------------------------------------------------------
+[tool.black]
+line-length = 100
+target-version = ["py39"]
+skip-string-normalization = false
+
+# ---------------------------------------------------------------------------
+# Pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

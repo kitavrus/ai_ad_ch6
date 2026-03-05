@@ -1,10 +1,10 @@
 """Управление контекстом диалога: три стратегии + суммаризация + agent loop."""
 
+from datetime import datetime
 import logging
 import re
-import uuid
-from datetime import datetime
 from typing import Dict, List, Optional, Tuple
+import uuid
 
 from openai import OpenAI
 

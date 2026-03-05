@@ -1,13 +1,14 @@
 """Основной модуль: точка входа и цикл интерактивного диалога."""
 
+import contextlib
+from datetime import datetime
 import json
 import logging
 import os
 import re
 import time
-import uuid
-from datetime import datetime
 from typing import Any, List, Optional
+import uuid
 
 from openai import OpenAI
 
@@ -36,16 +37,12 @@ from chatbot.context import (
     switch_branch,
     validate_draft_against_invariants,
 )
-from chatbot.memory import Memory, MemoryFactor
+from chatbot.memory import LongTermMemory, Memory, WorkingMemory
 from chatbot.memory_storage import (
     get_memory_stats,
-    import_memory_state,
-    list_long_term_memories,
     list_profiles,
-    list_working_memories,
     load_long_term,
     load_profile,
-    load_short_term_last,
     load_working_memory,
     save_long_term,
     save_profile,
@@ -60,8 +57,8 @@ from chatbot.models import (
     DialogueSession,
     RequestMetric,
     SessionState,
-    StickyFacts,
     StepStatus,
+    StickyFacts,
     TaskPhase,
     TaskPlan,
     TaskStep,
@@ -79,6 +76,45 @@ from chatbot.task_storage import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# DRY-константы и хелперы
+# ---------------------------------------------------------------------------
+
+_MSG_NO_ACTIVE_TASK = "[Нет активной задачи]"
+_MEMCLEAR_LABELS: dict = {
+    "short": "краткосрочная",
+    "short_term": "краткосрочная",
+    "working": "рабочая",
+    "long": "долговременная",
+    "long_term": "долговременная",
+    "all": "все уровни памяти",
+}
+
+
+def _now_iso() -> str:
+    """Возвращает текущее UTC-время в ISO-формате (DRY-замена datetime.utcnow().isoformat())."""
+    return datetime.utcnow().isoformat()
+
+
+def _now_str() -> str:
+    """Возвращает текущее UTC-время в формате '%Y-%m-%dT%H:%M:%SZ'."""
+    return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _require_active_plan(state: "SessionState") -> Optional["TaskPlan"]:
+    """Возвращает активный план или None (с сообщением об ошибке).
+
+    DRY-хелпер: заменяет повторяющийся шаблон:
+        plan = _get_active_plan(state)
+        if not plan:
+            print(_MSG_NO_ACTIVE_TASK)
+            return
+    """
+    plan = _get_active_plan(state)
+    if not plan:
+        print(_MSG_NO_ACTIVE_TASK)
+    return plan
 
 
 # ---------------------------------------------------------------------------
@@ -250,7 +286,7 @@ def _validate_steps(raw_list: List[dict]) -> Optional[List[dict]]:
 def _create_task_plan(
     description: str,
     state: SessionState,
-    client,
+    client: OpenAI,
     steps: Optional[List[dict]] = None,
 ) -> Optional[TaskPlan]:
     """Вызывает LLM для генерации плана (или использует готовые шаги), сохраняет план и шаги, активирует задачу."""
@@ -281,7 +317,7 @@ def _create_task_plan(
         print("[План пуст или не содержит валидных шагов]")
         return None
 
-    now = datetime.utcnow().isoformat()
+    now = _now_iso()
     task_id = uuid.uuid4().hex
     plan = TaskPlan(
         task_id=task_id,
@@ -367,7 +403,7 @@ def _get_active_plan(state: SessionState) -> Optional[TaskPlan]:
 def _transition_plan(plan: TaskPlan, new_phase: TaskPhase, state: SessionState) -> None:
     """Переводит план в новую фазу и сохраняет."""
     plan.phase = new_phase
-    plan.updated_at = datetime.utcnow().isoformat()
+    plan.updated_at = _now_iso()
     if new_phase == TaskPhase.DONE:
         plan.completed_at = plan.updated_at
     save_task_plan(plan, state.profile_name)
@@ -376,10 +412,10 @@ def _transition_plan(plan: TaskPlan, new_phase: TaskPhase, state: SessionState) 
 def _advance_plan(plan: TaskPlan, state: SessionState) -> None:
     """Переходит к следующему шагу. При исчерпании — переводит в validation."""
     plan.current_step_index += 1
-    plan.updated_at = datetime.utcnow().isoformat()
+    plan.updated_at = _now_iso()
     if plan.current_step_index >= plan.total_steps:
         _transition_plan(plan, TaskPhase.VALIDATION, state)
-        print(f"\n[Все шаги выполнены! Задача переходит в фазу: validation]")
+        print("\n[Все шаги выполнены! Задача переходит в фазу: validation]")
         print("Используйте /task done для завершения или продолжите работу.\n")
     else:
         save_task_plan(plan, state.profile_name)
@@ -390,9 +426,8 @@ def _advance_plan(plan: TaskPlan, state: SessionState) -> None:
 
 def _handle_step_subcommand(arg: str, state: SessionState) -> None:
     """Обрабатывает /task step done|skip|fail|note <текст>."""
-    plan = _get_active_plan(state)
+    plan = _require_active_plan(state)
     if not plan:
-        print("[Нет активной задачи]")
         return
     if plan.phase not in (TaskPhase.EXECUTION,):
         print(f"[Команда step доступна только в фазе execution. Текущая: {plan.phase.value}]")
@@ -407,7 +442,7 @@ def _handle_step_subcommand(arg: str, state: SessionState) -> None:
         print(f"[Шаг {step_num} не найден]")
         return
 
-    now = datetime.utcnow().isoformat()
+    now = _now_iso()
     if sub == "done":
         step.status = StepStatus.DONE
         step.completed_at = now
@@ -489,7 +524,7 @@ def _collect_plan_clarifications(text: str, state: SessionState) -> None:
         plan = load_task_plan(state.active_task_id, state.profile_name)
         if plan:
             plan.clarifications.extend(new_clarifications)
-            plan.updated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+            plan.updated_at = _now_str()
             save_task_plan(plan, state.profile_name)
             print(f"[Plan: {len(new_clarifications)} уточнений сохранено в план {state.active_task_id}]")
             return
@@ -509,7 +544,7 @@ def _call_llm_for_builder_step(
     step: "TaskStep",
     plan: "TaskPlan",
     state: SessionState,
-    client,
+    client: OpenAI,
 ) -> str:
     """Вызывает LLM для исполнения одного шага плана в режиме builder.
 
@@ -574,7 +609,7 @@ def _execute_builder_step(
     step: "TaskStep",
     plan: "TaskPlan",
     state: SessionState,
-    client,
+    client: OpenAI,
 ) -> bool:
     """Исполняет один шаг плана с retry и clarification loop.
 
@@ -599,7 +634,7 @@ def _execute_builder_step(
         if passed:
             step.status = StepStatus.DONE
             step.result = draft
-            step.completed_at = datetime.utcnow().isoformat()
+            step.completed_at = _now_iso()
             save_task_step(step, state.profile_name)
             try:
                 save_session(_build_session_payload(state), state.session_path)
@@ -620,7 +655,7 @@ def _execute_builder_step(
                 "question": f"Fix invariant violation: {violation}",
                 "answer": "Please correct the response to comply with all invariants.",
             })
-            plan.updated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+            plan.updated_at = _now_str()
             save_task_plan(plan, state.profile_name)
             continue
 
@@ -641,12 +676,12 @@ def _execute_builder_step(
             return False
 
         plan.clarifications.append({"question": question, "answer": answer})
-        plan.updated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        plan.updated_at = _now_str()
         save_task_plan(plan, state.profile_name)
         retry_count = 0  # reset after clarification
 
 
-def _run_plan_builder(state: SessionState, client) -> None:
+def _run_plan_builder(state: SessionState, client: OpenAI) -> None:
     """Автоматически исполняет все pending-шаги активного TaskPlan."""
     if not state.active_task_id:
         print("[Plan builder: нет активной задачи. Используйте /task new или /task load]")
@@ -682,7 +717,7 @@ def _run_plan_builder(state: SessionState, client) -> None:
         if result_parts:
             plan.result = "\n\n".join(result_parts)
         plan.phase = TaskPhase.DONE
-        plan.completed_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        plan.completed_at = _now_str()
         plan.updated_at = plan.completed_at
         save_task_plan(plan, state.profile_name)
         print("\n[Plan builder: ПЛАН ВЫПОЛНЕН]")
@@ -705,7 +740,7 @@ def _extract_task_description(messages: List[ChatMessage]) -> str:
     return "Задача из диалога планирования"
 
 
-def _kick_off_plan_dialog(state: SessionState, client, description: str = "") -> None:
+def _kick_off_plan_dialog(state: SessionState, client: OpenAI, description: str = "") -> None:
     """Делает первый LLM-вызов, чтобы ассистент задал первый вопрос."""
     system_prompt = build_plan_dialog_prompt(state.agent_mode.invariants)
     if description:
@@ -729,7 +764,7 @@ def _kick_off_plan_dialog(state: SessionState, client, description: str = "") ->
     state.messages.append(ChatMessage(role="assistant", content=text))
 
 
-def _handle_plan_dialog_message(user_input: str, state: SessionState, client) -> None:
+def _handle_plan_dialog_message(user_input: str, state: SessionState, client: OpenAI) -> None:
     """Обрабатывает сообщение пользователя в активном диалоге планирования."""
     state.messages.append(ChatMessage(role="user", content=user_input))
 
@@ -784,15 +819,10 @@ def _handle_plan_awaiting_task(user_input: str, state: SessionState) -> None:
     state.plan_dialog_state = "awaiting_invariants"
 
 
-def _handle_plan_awaiting_invariants(user_input: str, state: SessionState, client) -> None:
+def _handle_plan_awaiting_invariants(user_input: str, state: SessionState, client: Optional[OpenAI]) -> None:
     """Обрабатывает ответ про инварианты перед запуском план-диалога."""
     word = user_input.strip().lower().split()[0] if user_input.strip() else ""
-    if word in _NEGATIVE:
-        print("[Запускаю диалог планирования...]")
-        state.plan_dialog_state = "active"
-        if client is not None:
-            _kick_off_plan_dialog(state, client, description=state.plan_draft_description)
-    elif word in _DONE_WORDS:
+    if word in _NEGATIVE or word in _DONE_WORDS:
         print("[Запускаю диалог планирования...]")
         state.plan_dialog_state = "active"
         if client is not None:
@@ -804,7 +834,7 @@ def _handle_plan_awaiting_invariants(user_input: str, state: SessionState, clien
         print("[Введите 'да' чтобы добавить инварианты, 'нет' чтобы пропустить, 'готово' когда добавили.]")
 
 
-def _confirm_and_create_tasks(user_input: str, state: SessionState, client) -> None:
+def _confirm_and_create_tasks(user_input: str, state: SessionState, client: OpenAI) -> None:
     """Подтверждение или отказ от создания задач из черновика плана."""
     word = user_input.strip().lower().split()[0] if user_input.strip() else ""
     if word in _AFFIRMATIVE:
@@ -825,7 +855,7 @@ def _confirm_and_create_tasks(user_input: str, state: SessionState, client) -> N
         _handle_plan_dialog_message(user_input, state, client)
 
 
-def _handle_agent_command(action: str, arg: str, state: SessionState, client=None) -> None:
+def _handle_agent_command(action: str, arg: str, state: SessionState, client: Optional[OpenAI] = None) -> None:
     """Диспетчер команды /plan on|off|status|builder."""
     if action in ("on", "enable"):
         state.agent_mode.enabled = True
@@ -910,7 +940,7 @@ def _handle_invariant_command(action: str, arg: str, state: SessionState) -> Non
         print(f"[Неизвестная подкоманда invariant: {action!r}. Доступны: add, del, list, clear]")
 
 
-def _handle_task_command(action: str, arg: str, state: SessionState, client) -> None:
+def _handle_task_command(action: str, arg: str, state: SessionState, client: OpenAI) -> None:
     """Диспетчер команды /task."""
     if action == "new":
         if not arg:
@@ -919,9 +949,8 @@ def _handle_task_command(action: str, arg: str, state: SessionState, client) -> 
         _create_task_plan(arg, state, client)
 
     elif action == "show":
-        plan = _get_active_plan(state)
+        plan = _require_active_plan(state)
         if not plan:
-            print("[Нет активной задачи]")
             return
         steps = load_all_steps(plan.task_id, state.profile_name)
         _print_task_plan(plan, steps)
@@ -934,22 +963,23 @@ def _handle_task_command(action: str, arg: str, state: SessionState, client) -> 
         print("\n--- Список задач ---")
         for p in plans:
             active_mark = " ◀ активная" if p["task_id"] == state.active_task_id else ""
-            print(f"  [{p['task_id'][:8]}] {p['name']} | {p['phase']} | {p['current_step_index']}/{p['total_steps']}{active_mark}")
+            print(
+                f"  [{p['task_id'][:8]}] {p['name']} | {p['phase']} "
+                f"| {p['current_step_index']}/{p['total_steps']}{active_mark}"
+            )
         print("--- Конец ---\n")
 
     elif action == "start":
-        plan = _get_active_plan(state)
+        plan = _require_active_plan(state)
         if not plan:
-            print("[Нет активной задачи]")
             return
         if plan.phase != TaskPhase.PLANNING:
             print(f"[Задача уже в фазе: {plan.phase.value}]")
             return
-        # Mark first step as in_progress
         first_step = load_task_step(plan.task_id, 1, state.profile_name)
         if first_step:
             first_step.status = StepStatus.IN_PROGRESS
-            first_step.started_at = datetime.utcnow().isoformat()
+            first_step.started_at = _now_iso()
             save_task_step(first_step, state.profile_name)
         _transition_plan(plan, TaskPhase.EXECUTION, state)
         steps = load_all_steps(plan.task_id, state.profile_name)
@@ -960,16 +990,14 @@ def _handle_task_command(action: str, arg: str, state: SessionState, client) -> 
         _handle_step_subcommand(arg, state)
 
     elif action == "pause":
-        plan = _get_active_plan(state)
+        plan = _require_active_plan(state)
         if not plan:
-            print("[Нет активной задачи]")
             return
         _transition_plan(plan, TaskPhase.PAUSED, state)
         print(f"[Задача приостановлена: {plan.name}]")
 
     elif action == "resume":
         if arg:
-            # load specific task by id
             plan = load_task_plan(arg, state.profile_name)
             if not plan:
                 print(f"[Задача не найдена: {arg}]")
@@ -986,9 +1014,8 @@ def _handle_task_command(action: str, arg: str, state: SessionState, client) -> 
         _print_task_plan(plan, steps)
 
     elif action == "done":
-        plan = _get_active_plan(state)
+        plan = _require_active_plan(state)
         if not plan:
-            print("[Нет активной задачи]")
             return
         if arg:
             plan.result = arg
@@ -999,9 +1026,8 @@ def _handle_task_command(action: str, arg: str, state: SessionState, client) -> 
             print(f"  Итог: {arg}")
 
     elif action == "fail":
-        plan = _get_active_plan(state)
+        plan = _require_active_plan(state)
         if not plan:
-            print("[Нет активной задачи]")
             return
         plan.failure_reason = arg or "Задача провалена вручную"
         _transition_plan(plan, TaskPhase.FAILED, state)
@@ -1089,12 +1115,14 @@ def _apply_session_data(data: dict, state: SessionState) -> None:
     state.context_summary = data.get("context_summary", "")
     # Восстанавливаем стратегию и факты если были сохранены
     if "context_strategy" in data:
-        try:
+        with contextlib.suppress(ValueError):
             state.context_strategy = ContextStrategy(data["context_strategy"])
-        except ValueError:
-            pass
     if "sticky_facts" in data and isinstance(data["sticky_facts"], dict):
         state.sticky_facts = StickyFacts(facts=data["sticky_facts"])
+    if "branches" in data and isinstance(data["branches"], list):
+        state.branches = [Branch(**b) if isinstance(b, dict) else b for b in data["branches"]]
+    if "active_branch_id" in data:
+        state.active_branch_id = data["active_branch_id"]
     if "active_task_id" in data:
         state.active_task_id = data["active_task_id"]
     if data.get("agent_mode"):
@@ -1104,12 +1132,226 @@ def _apply_session_data(data: dict, state: SessionState) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Обработка inline-команд
+# Обработчики групп inline-команд (SRP: каждая функция — одна ответственность)
 # ---------------------------------------------------------------------------
 
 
-def _apply_inline_updates(updates: dict, state: SessionState, client=None) -> bool:
+def _cmd_model_params(key: str, value: Any, state: SessionState) -> None:
+    """Применяет изменения параметров модели: model, temperature, top_p, top_k и т.д."""
+    if key == "model":
+        state.model = value
+    elif key == "base_url":
+        state.base_url = value
+    elif key == "max_tokens":
+        state.max_tokens = value
+    elif key == "temperature":
+        state.temperature = value
+    elif key == "top_p":
+        state.top_p = value
+    elif key == "top_k":
+        state.top_k = value
+    elif key == "system_prompt":
+        state.system_prompt = value
+        if state.messages and state.messages[0].role == "system":
+            state.messages[0] = ChatMessage(role="system", content=value)
+        else:
+            state.messages.insert(0, ChatMessage(role="system", content=value))
+    elif key == "initial_prompt":
+        state.initial_prompt = value
+        if len(state.messages) >= 2 and state.messages[1].role == "user":
+            state.messages[1] = ChatMessage(role="user", content=value)
+        else:
+            state.messages.append(ChatMessage(role="user", content=value))
+
+
+def _cmd_resume(state: SessionState) -> None:
+    """Обрабатывает команду /resume — загружает последнюю сессию."""
+    loaded = load_last_session(profile_name=state.profile_name)
+    if loaded:
+        last_path, last_data = loaded
+        state.session_path = last_path
+        state.session_id_metrics = last_path.replace("/", "_").replace(".json", "")
+        _apply_session_data(last_data, state)
+        state.dialogue_start_time = time.time() - state.duration
+        logger.info("Resumed last session: %s", last_path)
+        _print_loaded_history(state.messages)
+    else:
+        logger.info("No last session found to resume")
+        print("No last session found to resume")
+
+
+def _cmd_strategy(value: str, state: SessionState) -> None:
+    """Обрабатывает команду /strategy — меняет стратегию контекста."""
+    with contextlib.suppress(ValueError):
+        new_strategy = ContextStrategy(value)
+        state.context_strategy = new_strategy
+        print(f"\n[Стратегия переключена на: {new_strategy.value}]")
+        _print_strategy_status(state)
+        return
+    print(f"Неизвестная стратегия: {value}")
+
+
+def _cmd_sticky_facts(key: str, value: Any, state: SessionState) -> None:
+    """Обрабатывает команды /showfacts, /setfact, /delfact."""
+    if key == "showfacts":
+        if state.sticky_facts.facts:
+            print("\n--- Текущие факты (Sticky Facts) ---")
+            for k, v in state.sticky_facts.facts.items():
+                print(f"  {k}: {v}")
+            print("--- Конец фактов ---\n")
+        else:
+            print("Факты пока не накоплены.")
+    elif key == "setfact" and isinstance(value, dict):
+        fact_key = value.get("key", "")
+        fact_val = value.get("value", "")
+        if fact_key and fact_val:
+            state.sticky_facts.set(fact_key, fact_val)
+            print(f"[Факт добавлен/обновлён: {fact_key} = {fact_val}]")
+    elif key == "delfact" and isinstance(value, str):
+        if value in state.sticky_facts.facts:
+            del state.sticky_facts.facts[value]
+            print(f"[Факт удалён: {value}]")
+        else:
+            print(f"Факт не найден: {value}")
+
+
+def _cmd_branching(key: str, value: Any, state: SessionState) -> None:
+    """Обрабатывает команды /checkpoint, /branch, /switch, /branches."""
+    if key == "checkpoint":
+        chk = create_checkpoint(state.messages, state.sticky_facts)
+        state.last_checkpoint = chk
+        print(f"\n[Checkpoint создан: {chk.created_at}]")
+        print(f"  Сообщений в snapshot: {len(chk.messages_snapshot)}")
+        print(f"  Фактов в snapshot:    {len(chk.facts_snapshot)}\n")
+    elif key == "branch":
+        last_chk = state.last_checkpoint
+        if last_chk is None:
+            last_chk = create_checkpoint(state.messages, state.sticky_facts)
+            state.last_checkpoint = last_chk
+            print("[Checkpoint создан автоматически для ветвления]")
+        branch = create_branch(value, last_chk)
+        state.branches.append(branch)
+        state.active_branch_id = branch.branch_id
+        print(f"\n[Создана ветка '{branch.name}' (ID: {branch.branch_id})]")
+        print(f"  Начато от snapshot с {len(last_chk.messages_snapshot)} сообщениями.")
+        print(f"  Активная ветка: {branch.branch_id}\n")
+    elif key == "switch":
+        found = switch_branch(value, state.branches)
+        if found:
+            state.active_branch_id = found.branch_id
+            print(f"\n[Переключено на ветку '{found.name}' (ID: {found.branch_id})]")
+            print(f"  Сообщений в ветке: {len(found.messages)}\n")
+        else:
+            names = [(b.branch_id, b.name) for b in state.branches]
+            print(f"Ветка не найдена: '{value}'. Доступны: {names}")
+    elif key == "branches":
+        if state.branches:
+            print("\n--- Ветки диалога ---")
+            for b in state.branches:
+                active_marker = " ◀ активная" if b.branch_id == state.active_branch_id else ""
+                print(f"  [{b.branch_id}] {b.name}{active_marker}  ({len(b.messages)} сообщений)")
+            print("--- Конец списка ---\n")
+        else:
+            print("Веток пока нет. Используйте /checkpoint, затем /branch <имя>.")
+
+
+def _cmd_memory(key: str, value: Any, state: SessionState) -> None:
+    """Обрабатывает команды /memshow, /memstats, /memclear, /memsave, /memload."""
+    if key == "memshow":
+        mem = state.memory
+        print("\n--- Состояние памяти ---")
+        print(f"Краткосрочная: {len(mem.short_term.messages)} сообщений")
+        print(f"Рабочая: задача={mem.working.current_task!r}, статус={mem.working.task_status}")
+        print(
+            f"Долговременная: профиль={mem.long_term.profile.name!r}, "
+            f"решений={len(mem.long_term.decisions_log)}, знаний={len(mem.long_term.knowledge_base)}"
+        )
+        print("--- Конец ---\n")
+    elif key == "memstats":
+        stats = get_memory_stats(profile_name=state.profile_name)
+        print("\n--- Статистика памяти ---")
+        for mtype, data in stats.items():
+            print(f"  {mtype}: {data['files']} файлов, {data['size_bytes']} байт")
+        print("--- Конец ---\n")
+    elif key == "memclear":
+        target = value if isinstance(value, str) else "all"
+        if target in ("short", "short_term", "all"):
+            state.memory.clear_short_term()
+        if target in ("working", "all"):
+            state.memory.working = WorkingMemory()
+        if target in ("long", "long_term", "all"):
+            state.memory.long_term = LongTermMemory()
+        print(f"[Память очищена: {_MEMCLEAR_LABELS.get(target, target)}]")
+    elif key == "memsave":
+        mem = state.memory
+        task_name = mem.working.current_task or "current"
+        path_w = save_working_memory(mem.working.model_dump(), task_name, profile_name=state.profile_name)
+        path_lt = save_long_term(mem.long_term.model_dump(), profile_name=state.profile_name)
+        path_st = save_short_term(
+            mem.short_term.model_dump(), state.session_path or "default", profile_name=state.profile_name
+        )
+        print(f"[Память сохранена: рабочая={path_w}, долговременная={path_lt}, краткосрочная={path_st}]")
+    elif key == "memload":
+        mem = state.memory
+        task_name = mem.working.current_task or "current"
+        data_w = load_working_memory(task_name, profile_name=state.profile_name)
+        if data_w:
+            mem.working = WorkingMemory(**data_w)
+            print(f"[Рабочая память загружена: задача={mem.working.current_task!r}]")
+        else:
+            print("[Рабочая память не найдена]")
+        data_lt = load_long_term(profile_name=state.profile_name)
+        if data_lt:
+            mem.long_term = LongTermMemory(**data_lt)
+            print(f"[Долговременная память загружена: решений={len(mem.long_term.decisions_log)}]")
+        else:
+            print("[Долговременная память не найдена]")
+
+
+def _cmd_knowledge(key: str, value: Any, state: SessionState, client: Optional[OpenAI]) -> None:
+    """Обрабатывает /settask, /setpref, /remember."""
+    if key == "settask":
+        state.memory.working.set_task(value)
+        print(f"[Задача установлена: {value!r}]")
+        if client is not None:
+            _create_task_plan(value, state, client)
+    elif key == "setpref":
+        if "=" in str(value):
+            pref_key, pref_val = str(value).split("=", 1)
+            state.memory.working.set_preference(pref_key.strip(), pref_val.strip())
+            print(f"[Предпочтение: {pref_key.strip()} = {pref_val.strip()}]")
+        else:
+            print("[setpref: ожидается формат key=value]")
+    elif key == "remember":
+        if "=" in str(value):
+            fact_key, fact_val = str(value).split("=", 1)
+            state.memory.add_to_long_term(knowledge_key=fact_key.strip(), knowledge_value=fact_val.strip())
+            print(f"[Знание сохранено: {fact_key.strip()}]")
+        else:
+            state.memory.add_to_long_term(
+                decision=str(value),
+                task=state.memory.working.current_task or "untitled",
+            )
+            print("[Решение сохранено в долговременную память]")
+
+
+# ---------------------------------------------------------------------------
+# Центральный диспетчер inline-команд
+# ---------------------------------------------------------------------------
+
+_MODEL_PARAM_KEYS = frozenset(
+    {"model", "base_url", "max_tokens", "temperature", "top_p", "top_k", "system_prompt", "initial_prompt"}
+)
+_STICKY_FACT_KEYS = frozenset({"showfacts", "setfact", "delfact"})
+_BRANCH_KEYS = frozenset({"checkpoint", "branch", "switch", "branches"})
+_MEMORY_KEYS = frozenset({"memshow", "memstats", "memclear", "memsave", "memload"})
+_KNOWLEDGE_KEYS = frozenset({"settask", "setpref", "remember"})
+
+
+def _apply_inline_updates(updates: dict, state: SessionState, client: Optional[OpenAI] = None) -> bool:
     """Применяет разобранные inline-команды к рабочему состоянию сессии.
+
+    Диспетчеризует каждую команду в профильный обработчик (SRP).
 
     Returns:
         True, если была обработана команда /showsummary.
@@ -1120,203 +1362,28 @@ def _apply_inline_updates(updates: dict, state: SessionState, client=None) -> bo
         if value is None:
             continue
 
-        # --- Базовые параметры ---
-        if key == "model":
-            state.model = value
-        elif key == "base_url":
-            state.base_url = value
-        elif key == "max_tokens":
-            state.max_tokens = value
-        elif key == "temperature":
-            state.temperature = value
-        elif key == "top_p":
-            state.top_p = value
-        elif key == "top_k":
-            state.top_k = value
-        elif key == "system_prompt":
-            state.system_prompt = value
-            if state.messages and state.messages[0].role == "system":
-                state.messages[0] = ChatMessage(role="system", content=value)
-            else:
-                state.messages.insert(0, ChatMessage(role="system", content=value))
-        elif key == "initial_prompt":
-            state.initial_prompt = value
-            if len(state.messages) >= 2 and state.messages[1].role == "user":
-                state.messages[1] = ChatMessage(role="user", content=value)
-            else:
-                state.messages.append(ChatMessage(role="user", content=value))
+        if key in _MODEL_PARAM_KEYS:
+            _cmd_model_params(key, value, state)
         elif key == "resume" and value:
-            loaded = load_last_session(profile_name=state.profile_name)
-            if loaded:
-                last_path, last_data = loaded
-                state.session_path = last_path
-                state.session_id_metrics = last_path.replace("/", "_").replace(".json", "")
-                _apply_session_data(last_data, state)
-                state.dialogue_start_time = time.time() - state.duration
-                logger.info("Resumed last session: %s", last_path)
-                _print_loaded_history(state.messages)
-            else:
-                logger.info("No last session found to resume")
-                print("No last session found to resume")
+            _cmd_resume(state)
         elif key == "showsummary":
             show_summary = True
-
-        # --- Стратегия контекста ---
         elif key == "strategy":
-            try:
-                new_strategy = ContextStrategy(value)
-                state.context_strategy = new_strategy
-                print(f"\n[Стратегия переключена на: {new_strategy.value}]")
-                _print_strategy_status(state)
-            except ValueError:
-                print(f"Неизвестная стратегия: {value}")
-
-        # --- Sticky Facts ---
-        elif key == "showfacts":
-            if state.sticky_facts.facts:
-                print("\n--- Текущие факты (Sticky Facts) ---")
-                for k, v in state.sticky_facts.facts.items():
-                    print(f"  {k}: {v}")
-                print("--- Конец фактов ---\n")
-            else:
-                print("Факты пока не накоплены.")
-        elif key == "setfact" and isinstance(value, dict):
-            fact_key = value.get("key", "")
-            fact_val = value.get("value", "")
-            if fact_key and fact_val:
-                state.sticky_facts.set(fact_key, fact_val)
-                print(f"[Факт добавлен/обновлён: {fact_key} = {fact_val}]")
-        elif key == "delfact" and isinstance(value, str):
-            if value in state.sticky_facts.facts:
-                del state.sticky_facts.facts[value]
-                print(f"[Факт удалён: {value}]")
-            else:
-                print(f"Факт не найден: {value}")
-
-        # --- Branching ---
-        elif key == "checkpoint":
-            chk = create_checkpoint(state.messages, state.sticky_facts)
-            state.last_checkpoint = chk
-            print(f"\n[Checkpoint создан: {chk.created_at}]")
-            print(f"  Сообщений в snapshot: {len(chk.messages_snapshot)}")
-            print(f"  Фактов в snapshot:    {len(chk.facts_snapshot)}\n")
-
-        elif key == "branch":
-            last_chk = state.last_checkpoint
-            if last_chk is None:
-                # Создаём checkpoint прямо сейчас
-                last_chk = create_checkpoint(state.messages, state.sticky_facts)
-                state.last_checkpoint = last_chk
-                print("[Checkpoint создан автоматически для ветвления]")
-            branch = create_branch(value, last_chk)
-            state.branches.append(branch)
-            state.active_branch_id = branch.branch_id
-            print(f"\n[Создана ветка '{branch.name}' (ID: {branch.branch_id})]")
-            print(f"  Начато от snapshot с {len(last_chk.messages_snapshot)} сообщениями.")
-            print(f"  Активная ветка: {branch.branch_id}\n")
-
-        elif key == "switch":
-            found = switch_branch(value, state.branches)
-            if found:
-                state.active_branch_id = found.branch_id
-                print(f"\n[Переключено на ветку '{found.name}' (ID: {found.branch_id})]")
-                print(f"  Сообщений в ветке: {len(found.messages)}\n")
-            else:
-                names = [(b.branch_id, b.name) for b in state.branches]
-                print(f"Ветка не найдена: '{value}'. Доступны: {names}")
-
-        elif key == "branches":
-            if state.branches:
-                print("\n--- Ветки диалога ---")
-                for b in state.branches:
-                    active_marker = " ◀ активная" if b.branch_id == state.active_branch_id else ""
-                    print(f"  [{b.branch_id}] {b.name}{active_marker}  ({len(b.messages)} сообщений)")
-                print("--- Конец списка ---\n")
-            else:
-                print("Веток пока нет. Используйте /checkpoint, затем /branch <имя>.")
-
-        # --- Управление памятью ---
-        elif key == "memshow":
-            mem = state.memory
-            print("\n--- Состояние памяти ---")
-            print(f"Краткосрочная: {len(mem.short_term.messages)} сообщений")
-            print(f"Рабочая: задача={mem.working.current_task!r}, статус={mem.working.task_status}")
-            print(f"Долговременная: профиль={mem.long_term.user_profile}, решений={len(mem.long_term.decisions_log)}, знаний={len(mem.long_term.knowledge_base)}")
-            print("--- Конец ---\n")
-
-        elif key == "memstats":
-            stats = get_memory_stats(profile_name=state.profile_name)
-            print("\n--- Статистика памяти ---")
-            for mtype, data in stats.items():
-                print(f"  {mtype}: {data['files']} файлов, {data['size_bytes']} байт")
-            print("--- Конец ---\n")
-
-        elif key == "memclear":
-            state.memory.clear_short_term()
-            print("[Краткосрочная память очищена]")
-
-        elif key == "memsave":
-            mem = state.memory
-            task_name = mem.working.current_task or "current"
-            path_w = save_working_memory(mem.working.model_dump(), task_name, profile_name=state.profile_name)
-            path_lt = save_long_term(mem.long_term.model_dump(), profile_name=state.profile_name)
-            path_st = save_short_term(mem.short_term.model_dump(), state.session_path or "default", profile_name=state.profile_name)
-            print(f"[Память сохранена: рабочая={path_w}, долговременная={path_lt}, краткосрочная={path_st}]")
-
-        elif key == "memload":
-            mem = state.memory
-            task_name = mem.working.current_task or "current"
-            data_w = load_working_memory(task_name, profile_name=state.profile_name)
-            if data_w:
-                from chatbot.memory import WorkingMemory
-                mem.working = WorkingMemory(**data_w)
-                print(f"[Рабочая память загружена: задача={mem.working.current_task!r}]")
-            else:
-                print("[Рабочая память не найдена]")
-            data_lt = load_long_term(profile_name=state.profile_name)
-            if data_lt:
-                from chatbot.memory import LongTermMemory
-                mem.long_term = LongTermMemory(**data_lt)
-                print(f"[Долговременная память загружена: решений={len(mem.long_term.decisions_log)}]")
-            else:
-                print("[Долговременная память не найдена]")
-
-        elif key == "settask":
-            state.memory.working.set_task(value)
-            print(f"[Задача установлена: {value!r}]")
-            if client is not None:
-                _create_task_plan(value, state, client)
-
+            _cmd_strategy(value, state)
+        elif key in _STICKY_FACT_KEYS:
+            _cmd_sticky_facts(key, value, state)
+        elif key in _BRANCH_KEYS:
+            _cmd_branching(key, value, state)
+        elif key in _MEMORY_KEYS:
+            _cmd_memory(key, value, state)
+        elif key in _KNOWLEDGE_KEYS:
+            _cmd_knowledge(key, value, state, client)
         elif key == "task" and isinstance(value, dict):
             _handle_task_command(value["action"], value.get("arg", ""), state, client)
-
         elif key == "plan" and isinstance(value, dict):
             _handle_agent_command(value["action"], value.get("arg", ""), state, client)
-
         elif key == "invariant" and isinstance(value, dict):
             _handle_invariant_command(value["action"], value.get("arg", ""), state)
-
-        elif key == "setpref":
-            # value expected as "key=val"
-            if "=" in str(value):
-                pref_key, pref_val = str(value).split("=", 1)
-                state.memory.working.set_preference(pref_key.strip(), pref_val.strip())
-                print(f"[Предпочтение: {pref_key.strip()} = {pref_val.strip()}]")
-            else:
-                print("[setpref: ожидается формат key=value]")
-
-        elif key == "remember":
-            # Save a fact to long-term knowledge base: "key=value"
-            if "=" in str(value):
-                fact_key, fact_val = str(value).split("=", 1)
-                state.memory.add_to_long_term(knowledge_key=fact_key.strip(), knowledge_value=fact_val.strip())
-                print(f"[Знание сохранено: {fact_key.strip()}]")
-            else:
-                state.memory.add_to_long_term(
-                    decision=str(value),
-                    task=state.memory.working.current_task or "untitled",
-                )
-                print("[Решение сохранено в долговременную память]")
 
         elif key == "profile" and isinstance(value, dict):
             _profile_action = value.get("action", "show")
@@ -1390,6 +1457,15 @@ def _apply_inline_updates(updates: dict, state: SessionState, client=None) -> bo
                 if loaded_p:
                     _lt.profile = loaded_p
                     state.profile_name = load_name
+                    # Сбрасываем состояние предыдущего профиля
+                    state.active_task_id = None
+                    state.agent_mode = AgentMode()
+                    state.plan_dialog_state = None
+                    state.total_tokens = 0
+                    state.total_prompt_tokens = 0
+                    state.total_completion_tokens = 0
+                    state.branches = []
+                    state.active_branch_id = None
                     # Загружаем историю диалога для нового профиля
                     loaded_session = load_last_session(profile_name=load_name)
                     if loaded_session:
@@ -1403,7 +1479,8 @@ def _apply_inline_updates(updates: dict, state: SessionState, client=None) -> bo
                         state.messages = []
                         state.session_path = os.path.join(
                             DIALOGUES_DIR, load_name,
-                            f"session_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}_{state.model.replace('/', '_')}.json",
+                            f"session_{datetime.utcnow().strftime('%Y%m%dT%H%M%SZ')}"
+                            f"_{state.model.replace('/', '_')}.json",
                         )
                         state.session_id_metrics = state.session_path.replace("/", "_").replace(".json", "")
                         print(f"[Профиль переключён: {load_name}] (история пуста)")
@@ -1435,7 +1512,7 @@ def _build_session_payload(
     """Собирает объект DialogueSession из текущего состояния."""
     return DialogueSession(
         dialogue_session_id=state.session_path or "",
-        created_at=datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+        created_at=_now_str(),
         model=state.model,
         base_url=state.base_url,
         system_prompt=state.system_prompt,
@@ -1760,7 +1837,8 @@ def main() -> None:
                     f"[Agent: инвариант нарушен ({violation}). "
                     f"Повтор {retry_count}/{state.agent_mode.max_retries}...]"
                 )
-                retry_messages = api_messages + [
+                retry_messages = [
+                    *api_messages,
                     {"role": "assistant", "content": draft},
                     {
                         "role": "user",

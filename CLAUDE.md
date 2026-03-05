@@ -165,7 +165,7 @@ Plan: `/plan on|off|status|retries <n>|builder|result`, `/invariant add|del|list
 
 ### Тестовое покрытие
 
-Текущее покрытие: **95%** (709 тестов).
+Текущее покрытие: **95%** (711 тестов).
 
 | Модуль | Покрытие |
 |--------|---------|
@@ -194,10 +194,15 @@ Plan: `/plan on|off|status|retries <n>|builder|result`, `/invariant add|del|list
 | `tests/test_memory_storage_coverage.py` | Exception-пути и happy-paths `memory_storage.py` |
 | `tests/test_models_coverage.py` | `StickyFacts`, `UserProfile.to_system_prompt` |
 | `tests/test_task_storage_coverage.py` | Corrupt JSON, список планов, удаление |
-| `tests/test_main_helpers.py` | Хелперы `main.py`: парсинг шагов, plan FSM, команды задач, профили |
-| `tests/test_main_coverage2.py` | Глубокие ветки `main.py`: builder, kick_off_plan, dialog, apply_inline |
+| `tests/test_main_helpers.py` | Хелперы `main.py`: парсинг шагов, plan FSM, команды задач, профили; восстановление веток из сессии; `/memclear all` |
+| `tests/test_main_coverage2.py` | Глубокие ветки `main.py`: builder, kick_off_plan, dialog, apply_inline; `/memshow` корректный вывод |
 
-**Известный баг (pre-existing):** в `_apply_inline_updates` ветка `/memshow` обращается к `mem.long_term.user_profile`, тогда как атрибут называется `mem.long_term.profile`. Тест `test_memshow` проверяет это через `pytest.raises(AttributeError)`.
+**Исправленные баги (day 14):**
+- `/memshow` — `mem.long_term.user_profile` → `mem.long_term.profile.name` (AttributeError устранён)
+- `/memclear` — теперь уважает параметр: `short`/`short_term`, `working`, `long`/`long_term`, `all`
+- `branches` — восстанавливаются при загрузке сессии (`_apply_session_data` + `active_branch_id`)
+- `create_at` → `created_at` в `LongTermMemory` (опечатка в поле)
+- `/profile load` — сбрасывает `active_task_id`, `agent_mode`, `plan_dialog_state`, токены и ветки перед загрузкой нового профиля
 
 ### Ключевые паттерны проектирования
 

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 import glob
 import json
 import logging
 import os
 import re
-from datetime import datetime
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from chatbot.config import DEFAULT_PROFILE, DIALOGUES_DIR
 
@@ -105,7 +105,7 @@ def load_short_term_last(session_id: str, profile_name: str = DEFAULT_PROFILE) -
         if not paths:
             return None
         last_path = paths[-1]
-        with open(last_path, "r", encoding="utf-8") as f:
+        with open(last_path, encoding="utf-8") as f:
             return json.load(f)
     except Exception as exc:
         logger.warning("Не удалось загрузить краткосрочную память: %s", exc)
@@ -154,7 +154,7 @@ def load_working_memory(task_name: str, profile_name: str = DEFAULT_PROFILE) -> 
         if not paths:
             return None
         last_path = paths[-1]
-        with open(last_path, "r", encoding="utf-8") as f:
+        with open(last_path, encoding="utf-8") as f:
             return json.load(f)
     except Exception as exc:
         logger.warning("Не удалось загрузить рабочую память: %s", exc)
@@ -172,7 +172,7 @@ def list_working_memories(profile_name: str = DEFAULT_PROFILE) -> list:
         paths = glob.glob(pattern)
         result = []
         for p in paths:
-            with open(p, "r", encoding="utf-8") as f:
+            with open(p, encoding="utf-8") as f:
                 data = json.load(f)
                 result.append({
                     "path": p,
@@ -228,7 +228,7 @@ def load_long_term(name: str = "default", profile_name: str = DEFAULT_PROFILE) -
         if not paths:
             return None
         last_path = paths[-1]
-        with open(last_path, "r", encoding="utf-8") as f:
+        with open(last_path, encoding="utf-8") as f:
             return json.load(f)
     except Exception as exc:
         logger.warning("Не удалось загрузить долговременную память: %s", exc)
@@ -246,7 +246,7 @@ def list_long_term_memories(profile_name: str = DEFAULT_PROFILE) -> list:
         paths = glob.glob(pattern)
         result = []
         for p in paths:
-            with open(p, "r", encoding="utf-8") as f:
+            with open(p, encoding="utf-8") as f:
                 data = json.load(f)
                 profile = data.get("user_profile", {})
                 name = profile.get("name", data.get("name", "unknown"))
@@ -268,7 +268,7 @@ def list_long_term_memories(profile_name: str = DEFAULT_PROFILE) -> list:
 # ===========================================================================
 
 
-def save_profile(profile: "UserProfile", name: Optional[str] = None) -> str:
+def save_profile(profile: UserProfile, name: Optional[str] = None) -> str:
     """Сохраняет профиль пользователя в файл dialogues/{name}/profile.json.
 
     Args:
@@ -278,7 +278,6 @@ def save_profile(profile: "UserProfile", name: Optional[str] = None) -> str:
     Returns:
         Путь к сохранённому файлу.
     """
-    from chatbot.models import UserProfile  # noqa: PLC0415
 
     safe = _safe_name(name or profile.name or "default")
     profile_dir = os.path.join(DIALOGUES_DIR, safe)
@@ -290,7 +289,7 @@ def save_profile(profile: "UserProfile", name: Optional[str] = None) -> str:
     return path
 
 
-def load_profile(name: str = "default") -> Optional["UserProfile"]:
+def load_profile(name: str = "default") -> Optional[UserProfile]:
     """Загружает профиль пользователя из dialogues/{name}/profile.json.
 
     Args:
@@ -299,14 +298,14 @@ def load_profile(name: str = "default") -> Optional["UserProfile"]:
     Returns:
         Объект UserProfile или None, если файл не найден.
     """
-    from chatbot.models import UserProfile  # noqa: PLC0415
+    from chatbot.models import UserProfile
 
     safe = _safe_name(name)
     path = os.path.join(DIALOGUES_DIR, safe, "profile.json")
     if not os.path.exists(path):
         return None
     try:
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, encoding="utf-8") as f:
             data = json.load(f)
         return UserProfile(**data)
     except Exception as exc:
@@ -325,9 +324,8 @@ def list_profiles() -> List[str]:
     names = []
     for entry in sorted(os.listdir(DIALOGUES_DIR)):
         entry_path = os.path.join(DIALOGUES_DIR, entry)
-        if os.path.isdir(entry_path):
-            if os.path.exists(os.path.join(entry_path, "profile.json")):
-                names.append(entry)
+        if os.path.isdir(entry_path) and os.path.exists(os.path.join(entry_path, "profile.json")):
+            names.append(entry)
     return names
 
 
@@ -372,7 +370,7 @@ def import_memory_state(path: str) -> Tuple[dict, dict, dict]:
     Returns:
         Кортеж (short_term, working, long_term) - три словаря.
     """
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         state = json.load(f)
     return (
         state.get("short_term", {}),

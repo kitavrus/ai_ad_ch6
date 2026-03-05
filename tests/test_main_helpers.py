@@ -795,6 +795,21 @@ class TestApplySessionDataValueError:
         _apply_session_data({"context_strategy": "invalid_strategy_xyz"}, state)
         assert state.context_strategy == ContextStrategy.SLIDING_WINDOW
 
+    def test_branches_restored(self):
+        from chatbot.main import _apply_session_data
+        from chatbot.context import create_checkpoint, create_branch
+        state = _make_state()
+        cp = create_checkpoint([])
+        b = create_branch("my-fork", cp)
+        data = {
+            "branches": [b.model_dump()],
+            "active_branch_id": b.branch_id,
+        }
+        _apply_session_data(data, state)
+        assert len(state.branches) == 1
+        assert state.branches[0].name == "my-fork"
+        assert state.active_branch_id == b.branch_id
+
 
 # ===========================================================================
 # _apply_inline_updates — various branches
@@ -1009,7 +1024,23 @@ class TestApplyInlineUpdatesExtra:
         state = _make_state()
         state.memory.short_term.messages.append(ChatMessage(role="user", content="hi"))
         _apply_inline_updates({"memclear": "short_term"}, state)
-        assert "очищена" in capsys.readouterr().out
+        out = capsys.readouterr().out
+        assert "очищена" in out
+        assert len(state.memory.short_term.messages) == 0
+
+    def test_memclear_all(self, capsys):
+        from chatbot.main import _apply_inline_updates
+        from chatbot.memory import WorkingMemory, LongTermMemory
+        state = _make_state()
+        state.memory.short_term.messages.append(ChatMessage(role="user", content="hi"))
+        state.memory.working.set_task("some task")
+        state.memory.long_term.add_knowledge("key", "val")
+        _apply_inline_updates({"memclear": "all"}, state)
+        out = capsys.readouterr().out
+        assert "очищена" in out
+        assert len(state.memory.short_term.messages) == 0
+        assert state.memory.working.current_task is None
+        assert len(state.memory.long_term.knowledge_base) == 0
 
     def test_memsave(self, capsys, monkeypatch, tmp_path):
         from chatbot.main import _apply_inline_updates

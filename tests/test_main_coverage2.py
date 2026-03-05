@@ -507,10 +507,10 @@ class TestApplyInlineUpdatesExtra2:
     def test_memshow(self, capsys):
         from chatbot.main import _apply_inline_updates
         state = _make_state()
-        # memshow accesses mem.long_term.user_profile which doesn't exist on LongTermMemory
-        # (it uses .profile instead) — this is a known issue in the code
-        with pytest.raises(AttributeError):
-            _apply_inline_updates({"memshow": "all"}, state)
+        _apply_inline_updates({"memshow": "all"}, state)
+        out = capsys.readouterr().out
+        assert "Долговременная" in out
+        assert "Краткосрочная" in out
 
     def test_memstats(self, capsys, monkeypatch, tmp_path):
         from chatbot.main import _apply_inline_updates
