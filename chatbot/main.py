@@ -1,8 +1,11 @@
 """Основной модуль: точка входа и цикл интерактивного диалога."""
 
+import json
 import logging
 import os
+import re
 import time
+import uuid
 from datetime import datetime
 from typing import Any, List, Optional
 
@@ -11,18 +14,27 @@ from openai import OpenAI
 from chatbot.cli import config_from_args, get_resume_flag, parse_args, parse_inline_command
 from chatbot.config import (
     API_KEY,
+    CONTEXT_RECENT_MESSAGES,
     DEFAULT_PROFILE,
     DIALOGUES_DIR,
     RUB_PER_USD,
     USD_PER_1K_TOKENS,
 )
 from chatbot.context import (
+    build_agent_system_prompt,
+    build_builder_step_prompt,
     build_context_by_strategy,
+    build_plan_dialog_prompt,
     create_branch,
     create_checkpoint,
     extract_facts_from_llm,
+    generate_clarification_question,
     maybe_summarize,
+    parse_agent_output,
+    parse_draft_plan_block,
+    parse_plan_questions,
     switch_branch,
+    validate_draft_against_invariants,
 )
 from chatbot.memory import Memory, MemoryFactor
 from chatbot.memory_storage import (
@@ -41,6 +53,7 @@ from chatbot.memory_storage import (
     save_working_memory,
 )
 from chatbot.models import (
+    AgentMode,
     Branch,
     ChatMessage,
     ContextStrategy,
@@ -48,9 +61,22 @@ from chatbot.models import (
     RequestMetric,
     SessionState,
     StickyFacts,
+    StepStatus,
+    TaskPhase,
+    TaskPlan,
+    TaskStep,
     TokenUsage,
 )
 from chatbot.storage import load_last_session, log_request_metric, save_session
+from chatbot.task_storage import (
+    delete_task_plan,
+    list_task_plans,
+    load_all_steps,
+    load_task_plan,
+    load_task_step,
+    save_task_plan,
+    save_task_step,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +170,887 @@ def _print_strategy_status(state: SessionState) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Система управления задачами — вспомогательные функции
+# ---------------------------------------------------------------------------
+
+_STEP_ICONS = {
+    StepStatus.PENDING: "[ ]",
+    StepStatus.IN_PROGRESS: "[>]",
+    StepStatus.DONE: "[x]",
+    StepStatus.SKIPPED: "[-]",
+    StepStatus.FAILED: "[!]",
+}
+
+
+def _build_plan_prompt(description: str) -> str:
+    """Формирует промпт для LLM-генерации шагов плана."""
+    return (
+        "You are a task planning assistant. Given the task description below, "
+        "generate a concise step-by-step plan as a JSON array. "
+        "Each element must have fields: \"title\" (short action phrase) and "
+        "\"description\" (one-sentence detail). Output ONLY the JSON array, "
+        "no prose, no markdown fences.\n\n"
+        f"Task: {description}"
+    )
+
+
+def _parse_steps_from_llm_response(text: str) -> Optional[List[dict]]:
+    """Разбирает ответ LLM в список шагов. Три слоя устойчивости:
+
+    1. Прямой json.loads
+    2. Поиск JSON-массива регуляркой
+    3. Нумерованный список как fallback
+    """
+    # Layer 1: direct parse
+    try:
+        parsed = json.loads(text.strip())
+        if isinstance(parsed, list):
+            return parsed
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Layer 2: find JSON array in text
+    m = re.search(r"\[[\s\S]*\]", text)
+    if m:
+        try:
+            parsed = json.loads(m.group(0))
+            if isinstance(parsed, list):
+                return parsed
+        except (json.JSONDecodeError, ValueError):
+            pass
+
+    # Layer 3: numbered list fallback
+    lines = text.splitlines()
+    steps = []
+    for line in lines:
+        m2 = re.match(r"^\s*\d+[\.\)]\s+(.+)", line)
+        if m2:
+            steps.append({"title": m2.group(1).strip(), "description": ""})
+    return steps if steps else None
+
+
+def _validate_steps(raw_list: List[dict]) -> Optional[List[dict]]:
+    """Проверяет и нормализует список шагов. Возвращает None если список пуст."""
+    if not raw_list:
+        return None
+    result = []
+    for item in raw_list:
+        if not isinstance(item, dict):
+            continue
+        title = str(item.get("title", item.get("step", ""))).strip()
+        if not title:
+            continue
+        result.append({
+            "title": title,
+            "description": str(item.get("description", "")).strip(),
+        })
+    return result if result else None
+
+
+def _create_task_plan(
+    description: str,
+    state: SessionState,
+    client,
+    steps: Optional[List[dict]] = None,
+) -> Optional[TaskPlan]:
+    """Вызывает LLM для генерации плана (или использует готовые шаги), сохраняет план и шаги, активирует задачу."""
+    llm_raw_response = None
+    if steps is None:
+        print("[Генерация плана задачи...]")
+        prompt = _build_plan_prompt(description)
+        try:
+            response = client.chat.completions.create(
+                model=state.model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.3,
+            )
+            raw_text = response.choices[0].message.content or "" if response and response.choices else ""
+        except Exception as exc:
+            print(f"[Ошибка LLM при генерации плана: {exc}]")
+            return None
+        raw_steps = _parse_steps_from_llm_response(raw_text)
+        if raw_steps is None:
+            print("[Не удалось разобрать план из ответа LLM]")
+            return None
+        validated = _validate_steps(raw_steps)
+        llm_raw_response = raw_text
+    else:
+        validated = _validate_steps(steps)
+
+    if not validated:
+        print("[План пуст или не содержит валидных шагов]")
+        return None
+
+    now = datetime.utcnow().isoformat()
+    task_id = uuid.uuid4().hex
+    plan = TaskPlan(
+        task_id=task_id,
+        profile_name=state.profile_name,
+        name=description[:80],
+        description=description,
+        phase=TaskPhase.PLANNING,
+        total_steps=len(validated),
+        current_step_index=0,
+        created_at=now,
+        updated_at=now,
+        llm_raw_response=llm_raw_response,
+    )
+    step_ids = []
+    for i, s in enumerate(validated, start=1):
+        step_id = f"{task_id}_step_{i:03d}"
+        step = TaskStep(
+            step_id=step_id,
+            task_id=task_id,
+            index=i,
+            title=s["title"],
+            description=s["description"],
+            status=StepStatus.PENDING,
+            created_at=now,
+        )
+        save_task_step(step, state.profile_name)
+        step_ids.append(step_id)
+    plan.step_ids = step_ids
+    save_task_plan(plan, state.profile_name)
+    state.active_task_id = task_id
+    # Сохраняем сессию чтобы active_task_id не потерялся при сбое
+    try:
+        save_session(_build_session_payload(state), state.session_path)
+    except Exception as exc:
+        logger.debug("Session save after plan creation failed: %s", exc)
+
+    steps = load_all_steps(task_id, state.profile_name)
+    print(f"\n[План создан: {plan.name}]")
+    _print_task_plan(plan, steps)
+    return plan
+
+
+def _print_task_plan(plan: TaskPlan, steps: List[TaskStep]) -> None:
+    """Выводит план задачи с иконками статуса."""
+    print(f"\n--- Задача: {plan.name} ---")
+    print(f"  Фаза: {plan.phase.value}  |  Шаг {plan.current_step_index + 1}/{plan.total_steps}")
+    for step in steps:
+        icon = _STEP_ICONS.get(step.status, "[ ]")
+        marker = " ◀" if step.index == plan.current_step_index + 1 else ""
+        print(f"  {icon} {step.index}. {step.title}{marker}")
+        if step.result:
+            print(f"       Результат: {step.result}")
+        if step.notes:
+            print(f"       Заметка: {step.notes}")
+    if plan.result:
+        print(f"  Итог задачи: {plan.result}")
+    print("--- Конец плана ---\n")
+
+
+def _print_task_result(plan: TaskPlan, steps: List[TaskStep]) -> None:
+    """Выводит только результаты выполнения задачи."""
+    print(f"\n=== Результат: {plan.name} ===")
+    print(f"Статус: {plan.phase.value}")
+    for step in steps:
+        if step.result:
+            icon = "✓" if step.status == StepStatus.DONE else "○"
+            print(f"  [{icon}] Шаг {step.index}. {step.title}")
+            print(f"       {step.result}")
+    if plan.result:
+        print(f"\nИтог задачи:\n{plan.result}")
+    else:
+        print("\n[Результат не записан. Используйте /task done <текст>]")
+    print("=" * 40)
+
+
+def _get_active_plan(state: SessionState) -> Optional[TaskPlan]:
+    """Возвращает активный план или None."""
+    if not state.active_task_id:
+        return None
+    return load_task_plan(state.active_task_id, state.profile_name)
+
+
+def _transition_plan(plan: TaskPlan, new_phase: TaskPhase, state: SessionState) -> None:
+    """Переводит план в новую фазу и сохраняет."""
+    plan.phase = new_phase
+    plan.updated_at = datetime.utcnow().isoformat()
+    if new_phase == TaskPhase.DONE:
+        plan.completed_at = plan.updated_at
+    save_task_plan(plan, state.profile_name)
+
+
+def _advance_plan(plan: TaskPlan, state: SessionState) -> None:
+    """Переходит к следующему шагу. При исчерпании — переводит в validation."""
+    plan.current_step_index += 1
+    plan.updated_at = datetime.utcnow().isoformat()
+    if plan.current_step_index >= plan.total_steps:
+        _transition_plan(plan, TaskPhase.VALIDATION, state)
+        print(f"\n[Все шаги выполнены! Задача переходит в фазу: validation]")
+        print("Используйте /task done для завершения или продолжите работу.\n")
+    else:
+        save_task_plan(plan, state.profile_name)
+        next_step = load_task_step(plan.task_id, plan.current_step_index + 1, state.profile_name)
+        if next_step:
+            print(f"\n[Переход к шагу {plan.current_step_index + 1}: {next_step.title}]\n")
+
+
+def _handle_step_subcommand(arg: str, state: SessionState) -> None:
+    """Обрабатывает /task step done|skip|fail|note <текст>."""
+    plan = _get_active_plan(state)
+    if not plan:
+        print("[Нет активной задачи]")
+        return
+    if plan.phase not in (TaskPhase.EXECUTION,):
+        print(f"[Команда step доступна только в фазе execution. Текущая: {plan.phase.value}]")
+        return
+
+    parts = arg.split(None, 1)
+    sub = parts[0].lower() if parts else ""
+    text = parts[1].strip() if len(parts) > 1 else ""
+    step_num = plan.current_step_index + 1
+    step = load_task_step(plan.task_id, step_num, state.profile_name)
+    if not step:
+        print(f"[Шаг {step_num} не найден]")
+        return
+
+    now = datetime.utcnow().isoformat()
+    if sub == "done":
+        step.status = StepStatus.DONE
+        step.completed_at = now
+        if text:
+            step.result = text
+        save_task_step(step, state.profile_name)
+        print(f"[Шаг {step_num} завершён: {step.title}]")
+        if text:
+            print(f"  Результат: {text}")
+        _advance_plan(plan, state)
+    elif sub == "skip":
+        step.status = StepStatus.SKIPPED
+        step.completed_at = now
+        save_task_step(step, state.profile_name)
+        print(f"[Шаг {step_num} пропущен: {step.title}]")
+        _advance_plan(plan, state)
+    elif sub == "fail":
+        step.status = StepStatus.FAILED
+        step.notes = text or step.notes
+        step.completed_at = now
+        save_task_step(step, state.profile_name)
+        plan.failure_reason = text or f"Шаг {step_num} провалился"
+        _transition_plan(plan, TaskPhase.FAILED, state)
+        state.active_task_id = None
+        print(f"[Задача помечена как FAILED: {plan.failure_reason}]")
+    elif sub == "note":
+        step.notes = text
+        save_task_step(step, state.profile_name)
+        print(f"[Заметка добавлена к шагу {step_num}]")
+    else:
+        print(f"[Неизвестная подкоманда step: {sub!r}. Доступны: done, skip, fail, note]")
+
+
+def _build_agent_state_vars(state: SessionState) -> str:
+    """Формирует строку текущего состояния для инжекции в системный промпт агента."""
+    parts = []
+    wm = state.memory.working if state.memory else None
+    if wm:
+        if wm.current_task:
+            parts.append(f"task: {wm.current_task}")
+        if wm.task_status:
+            parts.append(f"task_status: {wm.task_status}")
+        if wm.user_preferences:
+            for k, v in wm.user_preferences.items():
+                parts.append(f"{k}: {v}")
+    if state.active_task_id:
+        parts.append(f"active_task_id: {state.active_task_id}")
+        plan = load_task_plan(state.active_task_id, state.profile_name)
+        if plan and plan.clarifications:
+            clarif_lines = "; ".join(
+                f"Q: {c['question']} → A: {c['answer']}"
+                for c in plan.clarifications
+            )
+            parts.append(f"clarifications: [{clarif_lines}]")
+    return "; ".join(parts) if parts else "(empty)"
+
+
+def _collect_plan_clarifications(text: str, state: SessionState) -> None:
+    """Извлекает вопросы из вывода агента, собирает ответы и сохраняет в план."""
+    questions = parse_plan_questions(text)
+    if not questions:
+        return
+
+    print("\n[Plan: уточняющие вопросы]")
+    new_clarifications = []
+    for i, q in enumerate(questions, 1):
+        print(f"  {i}. {q}")
+        try:
+            answer = input(f"  Ответ {i}: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            break
+        if answer:
+            new_clarifications.append({"question": q, "answer": answer})
+
+    if not new_clarifications:
+        return
+
+    if state.active_task_id:
+        plan = load_task_plan(state.active_task_id, state.profile_name)
+        if plan:
+            plan.clarifications.extend(new_clarifications)
+            plan.updated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+            save_task_plan(plan, state.profile_name)
+            print(f"[Plan: {len(new_clarifications)} уточнений сохранено в план {state.active_task_id}]")
+            return
+
+    # Нет активной задачи — сохраняем в рабочую память
+    for c in new_clarifications:
+        key = "clarif_" + re.sub(r"\W+", "_", c["question"][:30]).strip("_").lower()
+        state.memory.working.set_preference(key, c["answer"])
+    print(f"[Plan: {len(new_clarifications)} уточнений сохранено в рабочую память]")
+
+
+_BUILDER_RETRIES_BEFORE_QUESTION = 3
+_BUILDER_MAX_CLARIFICATION_ROUNDS = 2
+
+
+def _call_llm_for_builder_step(
+    step: "TaskStep",
+    plan: "TaskPlan",
+    state: SessionState,
+    client,
+) -> str:
+    """Вызывает LLM для исполнения одного шага плана в режиме builder.
+
+    Returns:
+        Текст response из вывода агента.
+    """
+    all_steps = load_all_steps(plan.task_id, state.profile_name)
+    done_steps = [s for s in all_steps if s.status == StepStatus.DONE]
+    if done_steps:
+        prev_lines = "\n".join(
+            f"  {s.index}. [{s.status.value}] {s.title}" for s in done_steps
+        )
+    else:
+        prev_lines = "(нет выполненных шагов)"
+
+    profile_text = state.memory.get_profile_prompt() if state.memory else ""
+    state_vars = _build_agent_state_vars(state)
+    invariants = state.agent_mode.invariants
+
+    clarif_lines = ""
+    if plan.clarifications:
+        clarif_lines = "; ".join(
+            f"Q: {c['question']} → A: {c['answer']}" for c in plan.clarifications
+        )
+
+    step_desc = step.description
+    if clarif_lines:
+        step_desc = step_desc + f"\n\nClarifications: {clarif_lines}"
+
+    system_prompt = build_builder_step_prompt(
+        profile_text=profile_text,
+        state_vars=state_vars,
+        invariants=invariants,
+        step_title=step.title,
+        step_description=step_desc,
+        previous_steps=prev_lines,
+    )
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"Execute step: {step.title}"},
+    ]
+    try:
+        response = client.chat.completions.create(
+            model=state.model,
+            messages=messages,
+            max_tokens=state.max_tokens,
+            temperature=state.temperature,
+        )
+        raw = (response.choices[0].message.content or "") if response and response.choices else ""
+    except Exception as exc:
+        logger.warning("Builder LLM error: %s", exc)
+        return ""
+
+    response_text, state_update = parse_agent_output(raw)
+    if state_update and state.memory:
+        for k, v in state_update.items():
+            state.memory.working.set_preference(k, v)
+    return response_text
+
+
+def _execute_builder_step(
+    step: "TaskStep",
+    plan: "TaskPlan",
+    state: SessionState,
+    client,
+) -> bool:
+    """Исполняет один шаг плана с retry и clarification loop.
+
+    Returns:
+        True если шаг выполнен успешно, False если не справился.
+    """
+    invariants = state.agent_mode.invariants
+    retry_count = 0
+    clarif_rounds = 0
+
+    while True:
+        print(f"\n[Builder: выполняю шаг {step.index}. {step.title}...]")
+        draft = _call_llm_for_builder_step(step, plan, state, client)
+
+        if invariants:
+            passed, violation = validate_draft_against_invariants(
+                client, state.model, draft, invariants
+            )
+        else:
+            passed, violation = True, ""
+
+        if passed:
+            step.status = StepStatus.DONE
+            step.result = draft
+            step.completed_at = datetime.utcnow().isoformat()
+            save_task_step(step, state.profile_name)
+            try:
+                save_session(_build_session_payload(state), state.session_path)
+            except Exception as exc:
+                logger.debug("Session save after step completion failed: %s", exc)
+            print(f"\n[Builder: шаг {step.index} DONE]\n{draft}")
+            return True
+
+        retry_count += 1
+        print(
+            f"[Builder: инвариант нарушен ({violation}). "
+            f"Повтор {retry_count}/{_BUILDER_RETRIES_BEFORE_QUESTION}...]"
+        )
+
+        if retry_count < _BUILDER_RETRIES_BEFORE_QUESTION:
+            # Добавляем нарушение как clarification для следующей попытки
+            plan.clarifications.append({
+                "question": f"Fix invariant violation: {violation}",
+                "answer": "Please correct the response to comply with all invariants.",
+            })
+            plan.updated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+            save_task_plan(plan, state.profile_name)
+            continue
+
+        # 3 fail → спрашиваем пользователя
+        if clarif_rounds >= _BUILDER_MAX_CLARIFICATION_ROUNDS:
+            print(f"[Builder: шаг {step.index} не удалось выполнить после всех попыток]")
+            return False
+
+        clarif_rounds += 1
+        question = generate_clarification_question(
+            client, state.model, step.title, step.description, violation
+        )
+        print(f"\n[Builder: уточняющий вопрос]\n{question}")
+        try:
+            answer = input("Ваш ответ: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n[Builder: прервано пользователем]")
+            return False
+
+        plan.clarifications.append({"question": question, "answer": answer})
+        plan.updated_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        save_task_plan(plan, state.profile_name)
+        retry_count = 0  # reset after clarification
+
+
+def _run_plan_builder(state: SessionState, client) -> None:
+    """Автоматически исполняет все pending-шаги активного TaskPlan."""
+    if not state.active_task_id:
+        print("[Plan builder: нет активной задачи. Используйте /task new или /task load]")
+        return
+
+    plan = load_task_plan(state.active_task_id, state.profile_name)
+    if not plan:
+        print(f"[Plan builder: план не найден: {state.active_task_id}]")
+        return
+
+    steps = load_all_steps(plan.task_id, state.profile_name)
+    pending = [s for s in steps if s.status not in (StepStatus.DONE, StepStatus.SKIPPED)]
+
+    if not pending:
+        print("[Plan builder: все шаги уже выполнены]")
+        return
+
+    print(f"\n[Plan builder: запуск — {len(pending)} шагов к исполнению]")
+    for step in pending:
+        success = _execute_builder_step(step, plan, state, client)
+        if not success:
+            print(f"[Plan builder: остановлен на шаге {step.index}]")
+            return
+
+    # Проверяем финальный статус
+    all_steps = load_all_steps(plan.task_id, state.profile_name)
+    all_done = all(s.status in (StepStatus.DONE, StepStatus.SKIPPED) for s in all_steps)
+    if all_done:
+        result_parts = []
+        for s in all_steps:
+            if s.result:
+                result_parts.append(f"Шаг {s.index}. {s.title}:\n{s.result}")
+        if result_parts:
+            plan.result = "\n\n".join(result_parts)
+        plan.phase = TaskPhase.DONE
+        plan.completed_at = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        plan.updated_at = plan.completed_at
+        save_task_plan(plan, state.profile_name)
+        print("\n[Plan builder: ПЛАН ВЫПОЛНЕН]")
+
+
+def _print_draft_plan(steps: List[dict]) -> None:
+    """Выводит черновик плана из шагов."""
+    print("\n[Черновик плана:]")
+    for i, s in enumerate(steps, 1):
+        title = s.get("title", f"Шаг {i}")
+        desc = s.get("description", "")
+        print(f"  {i}. {title}" + (f" — {desc}" if desc else ""))
+
+
+def _extract_task_description(messages: List[ChatMessage]) -> str:
+    """Берёт первое значимое сообщение пользователя из диалога как описание задачи."""
+    for m in messages:
+        if m.role == "user" and m.content.strip() and m.content != "Начинаем планирование.":
+            return m.content.strip()[:120]
+    return "Задача из диалога планирования"
+
+
+def _kick_off_plan_dialog(state: SessionState, client, description: str = "") -> None:
+    """Делает первый LLM-вызов, чтобы ассистент задал первый вопрос."""
+    system_prompt = build_plan_dialog_prompt(state.agent_mode.invariants)
+    if description:
+        user_content = f"Задача: {description}\n\nНачинаем планирование."
+    else:
+        user_content = "Начинаем планирование."
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_content},
+    ]
+    try:
+        resp = client.chat.completions.create(
+            model=state.model, messages=messages, max_tokens=512, temperature=0.5
+        )
+        text = (resp.choices[0].message.content or "").strip()
+    except Exception as exc:
+        logger.warning("Plan dialog kick-off error: %s", exc)
+        return
+    display, _ = parse_agent_output(text)
+    print(display)
+    state.messages.append(ChatMessage(role="assistant", content=text))
+
+
+def _handle_plan_dialog_message(user_input: str, state: SessionState, client) -> None:
+    """Обрабатывает сообщение пользователя в активном диалоге планирования."""
+    state.messages.append(ChatMessage(role="user", content=user_input))
+
+    system_prompt = build_plan_dialog_prompt(state.agent_mode.invariants)
+    api_msgs = [{"role": "system", "content": system_prompt}]
+    api_msgs += [m.to_api_dict() for m in state.messages[-CONTEXT_RECENT_MESSAGES:]]
+
+    try:
+        resp = client.chat.completions.create(
+            model=state.model,
+            messages=api_msgs,
+            max_tokens=state.max_tokens,
+            temperature=state.temperature,
+        )
+        text = (resp.choices[0].message.content or "").strip()
+    except Exception as exc:
+        print(f"API error: {exc}")
+        return
+
+    state.messages.append(ChatMessage(role="assistant", content=text))
+    display, _ = parse_agent_output(text)
+
+    draft_raw = parse_draft_plan_block(text)
+    if draft_raw:
+        steps = _parse_steps_from_llm_response(draft_raw)
+        if steps:
+            state.plan_draft_steps = steps
+            state.plan_draft_description = _extract_task_description(state.messages)
+            state.plan_dialog_state = "confirming"
+            print(display)
+            _print_draft_plan(steps)
+            print("\n[Создать задачи? Введите 'да' для подтверждения или 'нет' для продолжения диалога]")
+            return
+
+    print(display)
+    _collect_plan_clarifications(text, state)
+
+
+_AFFIRMATIVE = {"да", "yes", "y", "д", "ок", "ok", "конечно", "создай", "создавай"}
+_NEGATIVE = {"нет", "no", "н", "n", "не", "пропустить", "skip"}
+_DONE_WORDS = {"готово", "done", "start", "старт", "go", "начать", "begin"}
+
+
+def _handle_plan_awaiting_task(user_input: str, state: SessionState) -> None:
+    """Обрабатывает ввод описания задачи в начале Plan-режима."""
+    description = user_input.strip()
+    if not description:
+        print("[Введите описание задачи:]")
+        return
+    state.plan_draft_description = description
+    print("[Хотите добавить инварианты? (да/нет):]")
+    state.plan_dialog_state = "awaiting_invariants"
+
+
+def _handle_plan_awaiting_invariants(user_input: str, state: SessionState, client) -> None:
+    """Обрабатывает ответ про инварианты перед запуском план-диалога."""
+    word = user_input.strip().lower().split()[0] if user_input.strip() else ""
+    if word in _NEGATIVE:
+        print("[Запускаю диалог планирования...]")
+        state.plan_dialog_state = "active"
+        if client is not None:
+            _kick_off_plan_dialog(state, client, description=state.plan_draft_description)
+    elif word in _DONE_WORDS:
+        print("[Запускаю диалог планирования...]")
+        state.plan_dialog_state = "active"
+        if client is not None:
+            _kick_off_plan_dialog(state, client, description=state.plan_draft_description)
+    elif word in _AFFIRMATIVE:
+        print("[Добавляйте инварианты через `/invariant add <текст>`. Введите 'готово' когда закончите.]")
+        # state остаётся "awaiting_invariants"
+    else:
+        print("[Введите 'да' чтобы добавить инварианты, 'нет' чтобы пропустить, 'готово' когда добавили.]")
+
+
+def _confirm_and_create_tasks(user_input: str, state: SessionState, client) -> None:
+    """Подтверждение или отказ от создания задач из черновика плана."""
+    word = user_input.strip().lower().split()[0] if user_input.strip() else ""
+    if word in _AFFIRMATIVE:
+        print("[Создаю задачи...]")
+        _create_task_plan(
+            state.plan_draft_description or "Задача из диалога планирования",
+            state,
+            client,
+            steps=state.plan_draft_steps,
+        )
+        state.plan_dialog_state = None
+        state.plan_draft_steps = []
+        state.plan_draft_description = ""
+        print("[Задачи созданы! Используйте /plan builder для выполнения]")
+    else:
+        state.plan_dialog_state = "active"
+        print("[Продолжаем диалог. Уточните требования:]")
+        _handle_plan_dialog_message(user_input, state, client)
+
+
+def _handle_agent_command(action: str, arg: str, state: SessionState, client=None) -> None:
+    """Диспетчер команды /plan on|off|status|builder."""
+    if action in ("on", "enable"):
+        state.agent_mode.enabled = True
+        state.plan_dialog_state = "awaiting_task"
+        state.plan_draft_steps = []
+        state.plan_draft_description = ""
+        print(f"[Plan mode: ON | инвариантов: {len(state.agent_mode.invariants)} | max_retries: {state.agent_mode.max_retries}]")
+        if state.memory is not None:
+            p = state.memory.long_term.profile
+            if p.is_empty():
+                print(f"[Профиль: {p.name} | (нет настроек)]")
+            else:
+                print(f"[Профиль: {p.name}]")
+                if p.style:
+                    print("  Стиль:       " + ", ".join(f"{k}={v}" for k, v in p.style.items()))
+                if p.format:
+                    print("  Формат:      " + ", ".join(f"{k}={v}" for k, v in p.format.items()))
+                if p.constraints:
+                    print("  Ограничения: " + "; ".join(p.constraints))
+                if p.custom:
+                    print("  Дополнения:  " + ", ".join(f"{k}={v}" for k, v in p.custom.items()))
+        print("[Введите описание задачи:]")
+    elif action in ("off", "disable"):
+        state.agent_mode.enabled = False
+        state.plan_dialog_state = None
+        state.plan_draft_steps = []
+        state.plan_draft_description = ""
+        print("[Plan mode: OFF]")
+    elif action == "status":
+        status = "ON" if state.agent_mode.enabled else "OFF"
+        print(f"[Plan mode: {status} | инвариантов: {len(state.agent_mode.invariants)} | max_retries: {state.agent_mode.max_retries}]")
+        if state.agent_mode.invariants:
+            print("Инварианты:")
+            for i, inv in enumerate(state.agent_mode.invariants, 1):
+                print(f"  {i}. {inv}")
+    elif action == "retries":
+        try:
+            n = int(arg)
+            state.agent_mode.max_retries = max(1, min(10, n))
+            print(f"[Plan max_retries: {state.agent_mode.max_retries}]")
+        except (ValueError, TypeError):
+            print("[plan retries: ожидается целое число]")
+    elif action == "builder":
+        _run_plan_builder(state, client)
+    elif action == "result":
+        _handle_task_command("result", arg, state, client)
+    else:
+        print(f"[Неизвестная подкоманда plan: {action!r}. Доступны: on, off, status, retries <n>, builder, result]")
+
+
+def _handle_invariant_command(action: str, arg: str, state: SessionState) -> None:
+    """Диспетчер команды /invariant add|del|list."""
+    inv = state.agent_mode.invariants
+    if action == "add":
+        if not arg:
+            print("[invariant add: требует текст инварианта]")
+            return
+        inv.append(arg)
+        print(f"[Инвариант добавлен #{len(inv)}: {arg}]")
+    elif action in ("del", "delete", "rm"):
+        try:
+            idx = int(arg) - 1
+            if 0 <= idx < len(inv):
+                removed = inv.pop(idx)
+                print(f"[Инвариант удалён: {removed}]")
+            else:
+                print(f"[Нет инварианта с номером {int(arg)}]")
+        except (ValueError, TypeError):
+            print("[invariant del: ожидается номер инварианта]")
+    elif action == "list":
+        if not inv:
+            print("[Инварианты не заданы. Используйте /invariant add <текст>]")
+        else:
+            print("\n--- Инварианты ---")
+            for i, text in enumerate(inv, 1):
+                print(f"  {i}. {text}")
+            print("--- Конец ---\n")
+    elif action == "clear":
+        inv.clear()
+        print("[Все инварианты удалены]")
+    else:
+        print(f"[Неизвестная подкоманда invariant: {action!r}. Доступны: add, del, list, clear]")
+
+
+def _handle_task_command(action: str, arg: str, state: SessionState, client) -> None:
+    """Диспетчер команды /task."""
+    if action == "new":
+        if not arg:
+            print("[/task new требует описания задачи]")
+            return
+        _create_task_plan(arg, state, client)
+
+    elif action == "show":
+        plan = _get_active_plan(state)
+        if not plan:
+            print("[Нет активной задачи]")
+            return
+        steps = load_all_steps(plan.task_id, state.profile_name)
+        _print_task_plan(plan, steps)
+
+    elif action == "list":
+        plans = list_task_plans(state.profile_name)
+        if not plans:
+            print("[Задач не найдено]")
+            return
+        print("\n--- Список задач ---")
+        for p in plans:
+            active_mark = " ◀ активная" if p["task_id"] == state.active_task_id else ""
+            print(f"  [{p['task_id'][:8]}] {p['name']} | {p['phase']} | {p['current_step_index']}/{p['total_steps']}{active_mark}")
+        print("--- Конец ---\n")
+
+    elif action == "start":
+        plan = _get_active_plan(state)
+        if not plan:
+            print("[Нет активной задачи]")
+            return
+        if plan.phase != TaskPhase.PLANNING:
+            print(f"[Задача уже в фазе: {plan.phase.value}]")
+            return
+        # Mark first step as in_progress
+        first_step = load_task_step(plan.task_id, 1, state.profile_name)
+        if first_step:
+            first_step.status = StepStatus.IN_PROGRESS
+            first_step.started_at = datetime.utcnow().isoformat()
+            save_task_step(first_step, state.profile_name)
+        _transition_plan(plan, TaskPhase.EXECUTION, state)
+        steps = load_all_steps(plan.task_id, state.profile_name)
+        print(f"\n[Задача запущена: {plan.name}]")
+        _print_task_plan(plan, steps)
+
+    elif action == "step":
+        _handle_step_subcommand(arg, state)
+
+    elif action == "pause":
+        plan = _get_active_plan(state)
+        if not plan:
+            print("[Нет активной задачи]")
+            return
+        _transition_plan(plan, TaskPhase.PAUSED, state)
+        print(f"[Задача приостановлена: {plan.name}]")
+
+    elif action == "resume":
+        if arg:
+            # load specific task by id
+            plan = load_task_plan(arg, state.profile_name)
+            if not plan:
+                print(f"[Задача не найдена: {arg}]")
+                return
+            state.active_task_id = plan.task_id
+        else:
+            plan = _get_active_plan(state)
+            if not plan:
+                print("[Нет активной задачи для возобновления]")
+                return
+        _transition_plan(plan, TaskPhase.EXECUTION, state)
+        steps = load_all_steps(plan.task_id, state.profile_name)
+        print(f"\n[Задача возобновлена: {plan.name}]")
+        _print_task_plan(plan, steps)
+
+    elif action == "done":
+        plan = _get_active_plan(state)
+        if not plan:
+            print("[Нет активной задачи]")
+            return
+        if arg:
+            plan.result = arg
+        _transition_plan(plan, TaskPhase.DONE, state)
+        state.active_task_id = None
+        print(f"[Задача завершена: {plan.name}]")
+        if arg:
+            print(f"  Итог: {arg}")
+
+    elif action == "fail":
+        plan = _get_active_plan(state)
+        if not plan:
+            print("[Нет активной задачи]")
+            return
+        plan.failure_reason = arg or "Задача провалена вручную"
+        _transition_plan(plan, TaskPhase.FAILED, state)
+        state.active_task_id = None
+        print(f"[Задача помечена как FAILED: {plan.failure_reason}]")
+
+    elif action == "load":
+        if not arg:
+            print("[/task load требует ID задачи]")
+            return
+        plan = load_task_plan(arg, state.profile_name)
+        if not plan:
+            print(f"[Задача не найдена: {arg}]")
+            return
+        state.active_task_id = plan.task_id
+        steps = load_all_steps(plan.task_id, state.profile_name)
+        print(f"[Активирована задача: {plan.name}]")
+        _print_task_plan(plan, steps)
+
+    elif action == "delete":
+        if not arg:
+            print("[/task delete требует ID задачи]")
+            return
+        ok = delete_task_plan(arg, state.profile_name)
+        if ok:
+            if state.active_task_id == arg:
+                state.active_task_id = None
+            print(f"[Задача удалена: {arg}]")
+        else:
+            print(f"[Задача не найдена: {arg}]")
+
+    elif action == "result":
+        task_id = arg.strip() if arg.strip() else state.active_task_id
+        if not task_id:
+            print("[Нет активной задачи. Укажите ID: /task result <id>]")
+            return
+        plan = load_task_plan(task_id, state.profile_name)
+        if not plan:
+            print(f"[Задача не найдена: {task_id}]")
+            return
+        steps = load_all_steps(plan.task_id, state.profile_name)
+        _print_task_result(plan, steps)
+
+    else:
+        print(f"[Неизвестная подкоманда task: {action!r}]")
+        print("Доступны: new, show, list, start, step, pause, resume, done, fail, load, delete, result")
+
+
+# ---------------------------------------------------------------------------
 # Загрузка и применение данных сессии
 # ---------------------------------------------------------------------------
 
@@ -188,6 +1095,12 @@ def _apply_session_data(data: dict, state: SessionState) -> None:
             pass
     if "sticky_facts" in data and isinstance(data["sticky_facts"], dict):
         state.sticky_facts = StickyFacts(facts=data["sticky_facts"])
+    if "active_task_id" in data:
+        state.active_task_id = data["active_task_id"]
+    if data.get("agent_mode"):
+        state.agent_mode = AgentMode(**data["agent_mode"])
+    if data.get("plan_dialog_state"):
+        state.plan_dialog_state = data["plan_dialog_state"]
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +1108,7 @@ def _apply_session_data(data: dict, state: SessionState) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _apply_inline_updates(updates: dict, state: SessionState) -> bool:
+def _apply_inline_updates(updates: dict, state: SessionState, client=None) -> bool:
     """Применяет разобранные inline-команды к рабочему состоянию сессии.
 
     Returns:
@@ -371,6 +1284,17 @@ def _apply_inline_updates(updates: dict, state: SessionState) -> bool:
         elif key == "settask":
             state.memory.working.set_task(value)
             print(f"[Задача установлена: {value!r}]")
+            if client is not None:
+                _create_task_plan(value, state, client)
+
+        elif key == "task" and isinstance(value, dict):
+            _handle_task_command(value["action"], value.get("arg", ""), state, client)
+
+        elif key == "plan" and isinstance(value, dict):
+            _handle_agent_command(value["action"], value.get("arg", ""), state, client)
+
+        elif key == "invariant" and isinstance(value, dict):
+            _handle_invariant_command(value["action"], value.get("arg", ""), state)
 
         elif key == "setpref":
             # value expected as "key=val"
@@ -424,7 +1348,12 @@ def _apply_inline_updates(updates: dict, state: SessionState) -> bool:
             elif _profile_action == "name":
                 if _profile_arg:
                     _lt.profile.name = _profile_arg
-                    print(f"[Имя профиля: {_profile_arg}]")
+                    state.profile_name = _profile_arg
+                    try:
+                        path = save_profile(_lt.profile, _profile_arg)
+                        print(f"[Профиль переименован и сохранён как '{_profile_arg}': {os.path.abspath(path)}]")
+                    except Exception as exc:
+                        print(f"[Ошибка сохранения профиля: {exc}]")
 
             elif _profile_action == "style":
                 if "=" in _profile_arg:
@@ -454,15 +1383,6 @@ def _apply_inline_updates(updates: dict, state: SessionState) -> bool:
                     print(f"[Ограничение удалено: {sub_text}]")
                 else:
                     print("[profile constraint: ожидается 'add <текст>' или 'del <текст>']")
-
-            elif _profile_action == "save":
-                save_name = _profile_arg or _lt.profile.name or "default"
-                _lt.profile.name = save_name
-                try:
-                    path = save_profile(_lt.profile, save_name)
-                    print(f"[Профиль '{save_name}' сохранён: {os.path.abspath(path)}]")
-                except Exception as exc:
-                    print(f"[Ошибка сохранения профиля: {exc}]")
 
             elif _profile_action == "load":
                 load_name = _profile_arg or "default"
@@ -533,6 +1453,9 @@ def _build_session_payload(
         sticky_facts=dict(state.sticky_facts.facts),
         branches=list(state.branches),
         active_branch_id=state.active_branch_id,
+        active_task_id=state.active_task_id,
+        agent_mode=state.agent_mode.model_dump(),
+        plan_dialog_state=state.plan_dialog_state,
     )
 
 
@@ -628,6 +1551,13 @@ def main() -> None:
                 state.dialogue_start_time = time.time() - state.duration
                 logger.info("Загрузка последней сессии: %s", state.session_path)
                 _print_loaded_history(state.messages)
+                # Восстанавливаем активную задачу
+                if state.active_task_id:
+                    _restored_plan = load_task_plan(state.active_task_id, _profile_name)
+                    if _restored_plan:
+                        _restored_steps = load_all_steps(state.active_task_id, _profile_name)
+                        print(f"\n[Восстановлена активная задача: {_restored_plan.name}]")
+                        _print_task_plan(_restored_plan, _restored_steps)
             except Exception as exc:
                 logger.warning("Не удалось загрузить последнюю сессию: %s", exc)
 
@@ -655,9 +1585,14 @@ def main() -> None:
     print("Факты:     /showfacts   /setfact <ключ>: <значение>   /delfact <ключ>")
     print("Память:    /memshow  /memstats  /memsave  /memload  /memclear")
     print("           /settask <задача>  /setpref <ключ>=<значение>  /remember <ключ>=<значение>")
-    print("Профиль:   /profile show | list | save [имя] | load <имя>")
+    print("Профиль:   /profile show | list | load <имя>")
     print("           /profile name <имя>  /profile style <к>=<в>  /profile format <к>=<в>")
-    print("           /profile constraint add <текст>  /profile constraint del <текст>\n")
+    print("           /profile constraint add <текст>  /profile constraint del <текст>")
+    print("Задачи:    /task new <описание>  /task show  /task list  /task start")
+    print("           /task step done|skip|fail|note <текст>  /task pause  /task resume [id]")
+    print("           /task done  /task fail [причина]  /task load <id>  /task delete <id>")
+    print("Агент:     /plan on|off|status  /plan retries <n>  /plan builder")
+    print("           /invariant add <текст>  /invariant del <n>  /invariant list  /invariant clear\n")
 
     while True:
         try:
@@ -673,7 +1608,7 @@ def main() -> None:
         if user_input.strip().startswith("/"):
             updates = parse_inline_command(user_input)
             if updates:
-                show_summary = _apply_inline_updates(updates, state)
+                show_summary = _apply_inline_updates(updates, state, client)
                 if show_summary:
                     if state.context_summary:
                         print("\n--- Текущее резюме контекста ---")
@@ -688,7 +1623,8 @@ def main() -> None:
                         "strategy",
                         "memshow", "memstats", "memsave", "memload", "memclear",
                         "settask", "setpref", "remember",
-                        "profile",
+                        "profile", "task",
+                        "plan", "invariant",
                     )
                 ):
                     print(f"Updated config: {updates}")
@@ -698,6 +1634,23 @@ def main() -> None:
 
         if user_input.strip().lower() in {"exit", "quit", "q"}:
             break
+
+        # --- Plan dialog intercept ---
+        if state.plan_dialog_state == "awaiting_task":
+            _handle_plan_awaiting_task(user_input, state)
+            continue
+
+        if state.plan_dialog_state == "awaiting_invariants":
+            _handle_plan_awaiting_invariants(user_input, state, client)
+            continue
+
+        if state.plan_dialog_state == "confirming":
+            _confirm_and_create_tasks(user_input, state, client)
+            continue
+
+        if state.plan_dialog_state == "active":
+            _handle_plan_dialog_message(user_input, state, client)
+            continue
 
         # Добавляем сообщение пользователя в активный контекст
         _append_message(state, ChatMessage(role="user", content=user_input))
@@ -723,16 +1676,52 @@ def main() -> None:
             active_branch=active_branch,
         )
 
-        # Инжектируем профиль пользователя в системный промпт
-        _profile_text = state.memory.get_profile_prompt()
-        if _profile_text:
+        # Инжектируем активную задачу в системный промпт
+        if state.active_task_id:
+            _active_plan = load_task_plan(state.active_task_id, state.profile_name)
+            if _active_plan and _active_plan.phase in (
+                TaskPhase.EXECUTION, TaskPhase.PLANNING, TaskPhase.VALIDATION
+            ):
+                _cur_step = load_task_step(
+                    _active_plan.task_id,
+                    _active_plan.current_step_index + 1,
+                    state.profile_name,
+                )
+                _task_ctx = f"[ACTIVE TASK: {_active_plan.name}]\nPhase: {_active_plan.phase.value}\nStep {_active_plan.current_step_index + 1}/{_active_plan.total_steps}"
+                if _cur_step:
+                    _task_ctx += f": {_cur_step.title}"
+                if api_messages and api_messages[0].get("role") == "system":
+                    api_messages[0] = {
+                        "role": "system",
+                        "content": api_messages[0]["content"] + "\n\n" + _task_ctx,
+                    }
+                else:
+                    api_messages.insert(0, {"role": "system", "content": _task_ctx})
+
+        # Инжектируем агентский системный промпт (если режим включён)
+        if state.agent_mode.enabled:
+            _profile_text = state.memory.get_profile_prompt()
+            _state_vars = _build_agent_state_vars(state)
+            _agent_sys = build_agent_system_prompt(
+                profile_text=_profile_text,
+                state_vars=_state_vars,
+                invariants=state.agent_mode.invariants,
+            )
             if api_messages and api_messages[0].get("role") == "system":
-                api_messages[0] = {
-                    "role": "system",
-                    "content": api_messages[0]["content"] + "\n\n" + _profile_text,
-                }
+                api_messages[0] = {"role": "system", "content": _agent_sys}
             else:
-                api_messages.insert(0, {"role": "system", "content": _profile_text})
+                api_messages.insert(0, {"role": "system", "content": _agent_sys})
+        else:
+            # Стандартный инжект профиля
+            _profile_text = state.memory.get_profile_prompt()
+            if _profile_text:
+                if api_messages and api_messages[0].get("role") == "system":
+                    api_messages[0] = {
+                        "role": "system",
+                        "content": api_messages[0]["content"] + "\n\n" + _profile_text,
+                    }
+                else:
+                    api_messages.insert(0, {"role": "system", "content": _profile_text})
 
         # Выполняем API-запрос
         try:
@@ -757,6 +1746,71 @@ def main() -> None:
             else ""
         )
 
+        # Stateful Agent: self-correction validation loop
+        display_text = text
+        if state.agent_mode.enabled and state.agent_mode.invariants:
+            draft = text
+            passed, violation = validate_draft_against_invariants(
+                client, state.model, draft, state.agent_mode.invariants
+            )
+            retry_count = 0
+            while not passed and retry_count < state.agent_mode.max_retries:
+                retry_count += 1
+                print(
+                    f"[Agent: инвариант нарушен ({violation}). "
+                    f"Повтор {retry_count}/{state.agent_mode.max_retries}...]"
+                )
+                retry_messages = api_messages + [
+                    {"role": "assistant", "content": draft},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"Your response violates this invariant: {violation}. "
+                            "Please correct your response to comply with all invariants "
+                            "and output the two required blocks (Response / State Update)."
+                        ),
+                    },
+                ]
+                try:
+                    retry_resp = client.chat.completions.create(
+                        model=state.model,
+                        messages=retry_messages,
+                        max_tokens=state.max_tokens,
+                        temperature=state.temperature,
+                        top_p=state.top_p,
+                        extra_body=extra,
+                    )
+                    draft = (
+                        retry_resp.choices[0].message.content or ""
+                        if retry_resp and retry_resp.choices
+                        else draft
+                    )
+                except Exception as exc:
+                    logger.warning("Agent retry error: %s", exc)
+                    break
+                passed, violation = validate_draft_against_invariants(
+                    client, state.model, draft, state.agent_mode.invariants
+                )
+            text = draft
+
+            # Разбираем вывод агента на Response + State Update
+            display_text, state_update = parse_agent_output(text)
+            if state_update:
+                for su_key, su_val in state_update.items():
+                    state.memory.working.set_preference(su_key, su_val)
+                print(f"[Agent State Update: {state_update}]")
+            if not passed:
+                print(f"[Agent: исчерпаны попытки валидации. Последнее нарушение: {violation}]")
+            _collect_plan_clarifications(text, state)
+        elif state.agent_mode.enabled:
+            # Agent mode без инвариантов — только парсим структуру вывода
+            display_text, state_update = parse_agent_output(text)
+            if state_update:
+                for su_key, su_val in state_update.items():
+                    state.memory.working.set_preference(su_key, su_val)
+                print(f"[Agent State Update: {state_update}]")
+            _collect_plan_clarifications(text, state)
+
         # Метрики токенов
         usage = getattr(response, "usage", None)
         prompt_tokens = int(getattr(usage, "prompt_tokens", None) or 0)
@@ -773,7 +1827,7 @@ def main() -> None:
         cost_rub = (total_tokens / 1000.0) * USD_PER_1K_TOKENS * RUB_PER_USD
         total_s = time.time() - state.dialogue_start_time
 
-        print(text)
+        print(display_text)
         print(
             f"\n[Токены: запрос={prompt_tokens}, "
             f"ответ={completion_tokens}, итого={total_tokens}]"
@@ -783,7 +1837,8 @@ def main() -> None:
             f"ответ={state.total_completion_tokens}, "
             f"всего={state.total_tokens} | ~{total_cost_rub:.2f}₽]"
         )
-        print(f"[Стратегия: {state.context_strategy.value}]")
+        _agent_tag = " | [Plan]" if state.agent_mode.enabled else ""
+        print(f"[Стратегия: {state.context_strategy.value}{_agent_tag}]")
 
         # Сохраняем ответ ассистента в активный контекст
         assistant_msg = ChatMessage(

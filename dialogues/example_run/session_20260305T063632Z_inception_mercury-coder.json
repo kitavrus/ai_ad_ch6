@@ -1,0 +1,39 @@
+{
+  "dialogue_session_id": "dialogues/example_run/session_20260305T063632Z_inception_mercury-coder.json",
+  "created_at": "2026-03-05T06:36:38Z",
+  "model": "inception/mercury-coder",
+  "base_url": "https://routerai.ru/api/v1",
+  "system_prompt": null,
+  "initial_prompt": null,
+  "messages": [
+    {
+      "role": "assistant",
+      "content": "**Response:**\nПривет! Чтобы составить план, мне нужно уточнить несколько деталей:\n\n1. На каком языке и фреймворке вы планируете писать API? (например, Python/FastAPI, Node.js/Express, Go, и т.д.)\n2. Какой тип базы данных будет использоваться? (SQL – PostgreSQL, MySQL, SQLite; NoSQL – MongoDB, Redis, и т.п.)\n3. Нужно ли реализовать аутентификацию и авторизацию? Если да, то какие методы (JWT, OAuth2, Basic Auth, и т.д.)?\n4. Какие основные операции (CRUD) должны быть доступны для задач? (создание, чтение, обновление, удаление, список, фильтрация)\n5. Требуется ли поддержка асинхронности или масштабируемости (например, Celery, RabbitMQ)?\n6. Планируется ли использовать ORM? Если да, то какой (SQLAlchemy, Prisma, TypeORM, и т.п.)?\n7. Есть ли какие‑то специфические требования к схеме задачи (поля, валидация, статус, приоритет и т.д.)?\n\nПосле того как вы ответите на эти вопросы, я смогу предложить конкретный план реализации.",
+      "tokens": null
+    },
+    {
+      "role": "user",
+      "content": "Как реализовать endpoint для создания задачи?",
+      "tokens": null
+    },
+    {
+      "role": "assistant",
+      "content": "**Response:**\nПривет! Чтобы помочь вам реализовать endpoint для создания задачи, мне нужно уточнить несколько деталей:\n\n1. На каком языке и фреймворке вы пишете приложение? (например, Python/FastAPI, Node.js/Express, Go, и т.д.)\n2. Какой ORM вы планируете использовать? (SQLAlchemy, Prisma, TypeORM, и т.п.)\n3. Какой тип базы данных будет применяться? (PostgreSQL, MySQL, SQLite, MongoDB и т.п.)\n4. Нужно ли аутентифицировать пользователей при создании задачи? Если да, то какие методы (JWT, OAuth2, Basic Auth)?\n5. Какие поля должна иметь задача? (например, title, description, due_date, priority, status и т.д.)\n6. Требуется ли валидация входных данных? Если да, то какие правила (обязательные поля, ограничения на длину, форматы и т.п.)?\n7. Нужно ли возвращать какой-то конкретный HTTP‑статус и/или тело ответа после успешного создания?\n\nПосле того как вы уточните эти моменты, я смогу предложить конкретный план реализации с шагами.",
+      "tokens": null
+    }
+  ],
+  "context_summary": "",
+  "turns": 3,
+  "last_user_input": null,
+  "last_assistant_content": null,
+  "duration_seconds": 5.91615891456604,
+  "total_tokens": 0,
+  "total_prompt_tokens": 0,
+  "total_completion_tokens": 0,
+  "requests": [],
+  "context_strategy": "sliding_window",
+  "sticky_facts": {},
+  "branches": [],
+  "active_branch_id": null,
+  "active_task_id": null
+}

@@ -311,13 +311,13 @@ class TestParseInlineCommand:
         result = parse_inline_command("/profile constraint del no emojis")
         assert result == {"profile": {"action": "constraint", "arg": "del no emojis"}}
 
-    def test_profile_save_with_name(self):
-        result = parse_inline_command("/profile save myprofile")
-        assert result == {"profile": {"action": "save", "arg": "myprofile"}}
+    def test_profile_name_with_arg(self):
+        result = parse_inline_command("/profile name myprofile")
+        assert result == {"profile": {"action": "name", "arg": "myprofile"}}
 
-    def test_profile_save_no_name(self):
-        result = parse_inline_command("/profile save")
-        assert result == {"profile": {"action": "save", "arg": ""}}
+    def test_profile_name_no_arg(self):
+        result = parse_inline_command("/profile name")
+        assert result == {"profile": {"action": "name", "arg": ""}}
 
     def test_profile_load(self):
         result = parse_inline_command("/profile load default")

@@ -1062,7 +1062,7 @@ class TestProfileInlineCommands:
         monkeypatch.chdir(tmp_path)
         state = self._make_state_with_memory()
         state.memory.long_term.set_profile_style("tone", "formal")
-        _apply_inline_updates({"profile": {"action": "save", "arg": "test_profile"}}, state)
+        _apply_inline_updates({"profile": {"action": "name", "arg": "test_profile"}}, state)
 
         state2 = self._make_state_with_memory()
         _apply_inline_updates({"profile": {"action": "load", "arg": "test_profile"}}, state2)
@@ -1087,7 +1087,7 @@ class TestProfileInlineCommands:
         """При /profile load state.profile_name обновляется."""
         monkeypatch.chdir(tmp_path)
         state = self._make_state_with_memory()
-        _apply_inline_updates({"profile": {"action": "save", "arg": "bob"}}, state)
+        _apply_inline_updates({"profile": {"action": "name", "arg": "bob"}}, state)
 
         state2 = self._make_state_with_memory()
         assert state2.profile_name == "default"
@@ -1102,7 +1102,7 @@ class TestProfileInlineCommands:
 
         # Создаём профиль и кладём сессию для "alice"
         state = self._make_state_with_memory()
-        _apply_inline_updates({"profile": {"action": "save", "arg": "alice"}}, state)
+        _apply_inline_updates({"profile": {"action": "name", "arg": "alice"}}, state)
         profile_dir = tmp_path / "dialogues" / "alice"
         profile_dir.mkdir(parents=True, exist_ok=True)
         alice_session = DialogueSession(
@@ -1126,7 +1126,7 @@ class TestProfileInlineCommands:
         state = self._make_state_with_memory()
         from chatbot.models import ChatMessage
         state.messages = [ChatMessage(role="user", content="старое сообщение")]
-        _apply_inline_updates({"profile": {"action": "save", "arg": "newuser"}}, state)
+        _apply_inline_updates({"profile": {"action": "name", "arg": "newuser"}}, state)
 
         state2 = self._make_state_with_memory()
         state2.messages = [ChatMessage(role="user", content="чужое сообщение")]

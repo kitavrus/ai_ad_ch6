@@ -157,14 +157,37 @@ def parse_inline_command(line: str) -> dict:
     if not payload:
         return {}
 
-    # Специальная обработка /profile — аргумент может содержать '='
+    # Специальная обработка /plan
     _first_word = payload.split(None, 1)[0].lower()
+    if _first_word == "plan":
+        _rest = payload[len("plan"):].strip()
+        _parts = _rest.split(None, 1)
+        _sub = _parts[0].lower() if _parts else "status"
+        _arg = _parts[1].strip() if len(_parts) > 1 else ""
+        return {"plan": {"action": _sub, "arg": _arg}}
+
+    # Специальная обработка /invariant
+    if _first_word == "invariant":
+        _rest = payload[len("invariant"):].strip()
+        _parts = _rest.split(None, 1)
+        _sub = _parts[0].lower() if _parts else "list"
+        _arg = _parts[1].strip() if len(_parts) > 1 else ""
+        return {"invariant": {"action": _sub, "arg": _arg}}
+
+    # Специальная обработка /profile — аргумент может содержать '='
     if _first_word == "profile":
         _rest = payload[len("profile"):].strip()
         _sub_parts = _rest.split(None, 1)
         _sub_cmd = _sub_parts[0].lower() if _sub_parts else "show"
         _sub_arg = _sub_parts[1].strip() if len(_sub_parts) > 1 else ""
         return {"profile": {"action": _sub_cmd, "arg": _sub_arg}}
+
+    # Специальная обработка /task
+    if _first_word == "task":
+        _rest = payload[len("task"):].strip()
+        _parts = _rest.split(None, 1)
+        return {"task": {"action": _parts[0].lower() if _parts else "show",
+                         "arg": _parts[1].strip() if len(_parts) > 1 else ""}}
 
     # Разбиваем на ключ и значение
     if "=" in payload:
@@ -290,12 +313,11 @@ def parse_inline_command(line: str) -> dict:
         # Субкоманды:
         #   /profile show                  — показать текущий профиль
         #   /profile list                  — список сохранённых профилей
-        #   /profile name <val>            — задать имя профиля
+        #   /profile name <val>            — задать имя, создать папку и сохранить профиль
         #   /profile style <k>=<v>         — стиль (тон, краткость, язык)
         #   /profile format <k>=<v>        — формат вывода
         #   /profile constraint add <text> — добавить ограничение
         #   /profile constraint del <text> — удалить ограничение
-        #   /profile save [name]           — сохранить профиль
         #   /profile load <name>           — загрузить профиль по имени
         sub_parts = value.strip().split(None, 1)
         sub_cmd = sub_parts[0].lower() if sub_parts else "show"

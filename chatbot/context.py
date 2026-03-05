@@ -1,6 +1,7 @@
-"""Управление контекстом диалога: три стратегии + суммаризация."""
+"""Управление контекстом диалога: три стратегии + суммаризация + agent loop."""
 
 import logging
+import re
 import uuid
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
@@ -395,6 +396,341 @@ def build_context_branching(
 # ===========================================================================
 # Диспетчер: выбор стратегии
 # ===========================================================================
+
+
+# ===========================================================================
+# STATEFUL AI AGENT: системный промпт, валидация, парсинг вывода
+# ===========================================================================
+
+_AGENT_SYSTEM_TEMPLATE = """\
+# ROLE
+You are an advanced Stateful AI Agent operating within a strict architectural loop. \
+Your goal is to process user queries while maintaining a persistent state and adhering to rigid invariants.
+
+# CONTEXT VARIABLES
+- **Profile**: {profile}
+- **Current State**: {state}
+- **Invariants**: {invariants}
+- **User Query**: [see the last user message in the conversation]
+
+# INSTRUCTIONS
+Follow this execution loop strictly for every interaction:
+
+1. **BUILD PROMPT**: Synthesize the User Query with the Profile, Current State, and Invariants.
+2. **GENERATE DRAFT**: Create a response based on the synthesized context.
+3. **VALIDATE (Self-Correction Loop)**:
+   - Check your draft against the Invariants.
+   - If any invariant is violated — do NOT output it. Correct and retry internally until valid.
+4. **CLARIFICATION** (optional): If you need clarifications to build a better plan or response,
+   include a **Questions:** block with numbered questions. The system will collect user answers
+   and save them to the active plan before the next iteration.
+5. **OUTPUT FORMAT** — you MUST output the following labelled blocks in order:
+
+**Response:**
+[Your final, validated answer here]
+
+**Questions:**
+[Numbered list of clarifying questions if needed, e.g.:
+1. What is the deadline?
+2. Which technology stack do you prefer?
+Omit this block entirely if no clarifications are needed.]
+
+**State Update:**
+[New state variables as "key: value" lines. Write "(none)" if no updates.]
+"""
+
+
+def build_agent_system_prompt(
+    profile_text: str,
+    state_vars: str,
+    invariants: List[str],
+) -> str:
+    """Строит системный промпт для режима Stateful AI Agent.
+
+    Args:
+        profile_text: Текстовое представление профиля пользователя.
+        state_vars: Текущие переменные состояния (задача, предпочтения).
+        invariants: Список строк-инвариантов.
+
+    Returns:
+        Готовый системный промпт.
+    """
+    if invariants:
+        inv_text = "\n".join(f"  {i + 1}. {inv}" for i, inv in enumerate(invariants))
+    else:
+        inv_text = "  (не заданы)"
+    return _AGENT_SYSTEM_TEMPLATE.format(
+        profile=profile_text or "(не задан)",
+        state=state_vars or "(не задан)",
+        invariants=inv_text,
+    )
+
+
+def validate_draft_against_invariants(
+    client: OpenAI,
+    model: str,
+    draft: str,
+    invariants: List[str],
+) -> Tuple[bool, str]:
+    """Вызывает LLM для проверки черновика против списка инвариантов.
+
+    Args:
+        client: Клиент OpenAI.
+        model: Идентификатор модели.
+        draft: Черновик ответа агента.
+        invariants: Список строк-инвариантов.
+
+    Returns:
+        Кортеж (passed, violation_reason). Если passed=True, reason пустой.
+    """
+    if not invariants:
+        return True, ""
+    inv_text = "\n".join(f"{i + 1}. {inv}" for i, inv in enumerate(invariants))
+    prompt = (
+        f"Invariants:\n{inv_text}\n\n"
+        f"Response to validate:\n{draft}\n\n"
+        "Does this response violate any of the above invariants?\n"
+        'Answer ONLY: "PASS" or "FAIL: <reason>"'
+    )
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=128,
+            temperature=0.0,
+        )
+        result = (response.choices[0].message.content or "").strip()
+        if result.upper().startswith("PASS"):
+            return True, ""
+        if result.upper().startswith("FAIL"):
+            reason = result[result.find(":") + 1:].strip() if ":" in result else result
+            return False, reason
+        return True, ""
+    except Exception as exc:
+        logger.warning("Agent validation error: %s", exc)
+        return True, ""
+
+
+def parse_agent_output(text: str) -> Tuple[str, Dict[str, str]]:
+    """Разбирает вывод агента на блоки Response и State Update.
+
+    Args:
+        text: Полный текст ответа агента.
+
+    Returns:
+        Кортеж (response_text, state_update_dict).
+        Если блоков нет — возвращает (text, {}).
+    """
+    # Ищем блок Response (до Questions, State Update или до конца)
+    r_match = re.search(
+        r"\*{0,2}Response[:\s]\*{0,2}\s*\n([\s\S]*?)(?:\n\*{0,2}(?:Questions?|State Update)|\Z)",
+        text,
+        re.IGNORECASE,
+    )
+    # Ищем блок State Update (до конца)
+    s_match = re.search(
+        r"\*{0,2}State Update[:\s]\*{0,2}\s*\n([\s\S]*?)$",
+        text,
+        re.IGNORECASE,
+    )
+
+    if not r_match and not s_match:
+        return text, {}
+
+    response_text = r_match.group(1).strip() if r_match else text
+
+    state_update: Dict[str, str] = {}
+    if s_match:
+        block = s_match.group(1).strip()
+        if block.lower() != "(none)":
+            for line in block.splitlines():
+                line = line.strip().lstrip("-").strip()
+                if ":" in line and not line.startswith("#"):
+                    k, _, v = line.partition(":")
+                    k, v = k.strip(), v.strip()
+                    if k and v:
+                        state_update[k] = v
+
+    return response_text, state_update
+
+
+def parse_plan_questions(text: str) -> List[str]:
+    """Извлекает уточняющие вопросы из блока **Questions:** в выводе агента.
+
+    Args:
+        text: Полный текст ответа агента.
+
+    Returns:
+        Список вопросов (пустой список если блока нет).
+    """
+    q_match = re.search(
+        r"\*{0,2}Questions?[:\s]\*{0,2}[^\S\n]*\n([\s\S]*?)(?=\n\*{0,2}State Update|\Z)",
+        text,
+        re.IGNORECASE,
+    )
+    if not q_match:
+        return []
+    block = q_match.group(1).strip()
+    questions: List[str] = []
+    for line in block.splitlines():
+        line = line.strip().lstrip("-").lstrip("0123456789.)").strip()
+        if line:
+            questions.append(line)
+    return questions
+
+
+_PLAN_DIALOG_SYSTEM_TEMPLATE = """\
+# ROLE
+You are a Planning Assistant. Your job is to help the user define a task and break it \
+into concrete implementation steps.
+
+# CONTEXT
+- **Invariants** (must be respected in the plan): {invariants}
+- **Conversation so far**: [see the messages above]
+
+# INSTRUCTIONS
+1. If this is the start of the dialog — ask the user what task they want to plan.
+2. As the user provides information — propose a numbered plan of 3-7 concrete steps.
+3. Ask clarifying questions about anything unclear or ambiguous.
+4. When you have enough information to produce a solid plan — include the **Draft Plan:**
+   block with the final steps AND ask the user to confirm.
+5. If the user requests changes — update the plan and ask again.
+
+# OUTPUT FORMAT
+
+**Response:**
+[Your message to the user — plan, questions, or confirmation request]
+
+**Draft Plan:**
+[JSON array when plan is ready, e.g.:
+[
+  {{"title": "Set up project", "description": "Initialize FastAPI project with dependencies"}},
+  {{"title": "Create models", "description": "Define Pydantic models for request/response"}}
+]
+Omit this block entirely if you are still gathering information.]
+"""
+
+
+def build_plan_dialog_prompt(invariants: List[str]) -> str:
+    """Строит системный промпт для режима диалога планирования."""
+    inv_text = (
+        "\n".join(f"  {i+1}. {inv}" for i, inv in enumerate(invariants))
+        if invariants
+        else "  (не заданы)"
+    )
+    return _PLAN_DIALOG_SYSTEM_TEMPLATE.format(invariants=inv_text)
+
+
+def parse_draft_plan_block(text: str) -> Optional[str]:
+    """Извлекает содержимое блока **Draft Plan:** или None."""
+    m = re.search(
+        r"\*{0,2}Draft Plan[:\s]\*{0,2}[^\n]*\n([\s\S]*?)(?=\n\*\*[^\n]|\Z)",
+        text,
+        re.IGNORECASE,
+    )
+    if not m:
+        return None
+    block = m.group(1).strip()
+    return block if block else None
+
+
+_BUILDER_SYSTEM_TEMPLATE = """\
+# ROLE
+You are an advanced Stateful AI Agent executing a plan step-by-step.
+
+# CONTEXT VARIABLES
+- **Profile**: {profile}
+- **Current State**: {state}
+- **Invariants**: {invariants}
+- **Current Step**: {step_title}
+- **Step Description**: {step_description}
+- **Previous Steps**: {previous_steps}
+
+# INSTRUCTIONS
+1. **BUILD PROMPT**: Synthesize the Step with Profile, State, Invariants.
+2. **GENERATE DRAFT**: Execute the step — produce a concrete result.
+3. **VALIDATE**: Ensure the result satisfies all Invariants.
+4. **OUTPUT FORMAT** — you MUST output the following labelled blocks:
+
+**Response:**
+[Execution result for this step]
+
+**State Update:**
+[key: value updates, or (none)]
+"""
+
+
+def build_builder_step_prompt(
+    profile_text: str,
+    state_vars: str,
+    invariants: List[str],
+    step_title: str,
+    step_description: str,
+    previous_steps: str,
+) -> str:
+    """Строит системный промпт для исполнения одного шага плана в режиме builder.
+
+    Args:
+        profile_text: Текстовое представление профиля пользователя.
+        state_vars: Текущие переменные состояния.
+        invariants: Список строк-инвариантов.
+        step_title: Заголовок текущего шага.
+        step_description: Описание текущего шага.
+        previous_steps: Строка с описанием выполненных шагов.
+
+    Returns:
+        Готовый системный промпт.
+    """
+    if invariants:
+        inv_text = "\n".join(f"  {i + 1}. {inv}" for i, inv in enumerate(invariants))
+    else:
+        inv_text = "  (не заданы)"
+    return _BUILDER_SYSTEM_TEMPLATE.format(
+        profile=profile_text or "(не задан)",
+        state=state_vars or "(не задан)",
+        invariants=inv_text,
+        step_title=step_title,
+        step_description=step_description or "(нет описания)",
+        previous_steps=previous_steps or "(нет выполненных шагов)",
+    )
+
+
+def generate_clarification_question(
+    client: OpenAI,
+    model: str,
+    step_title: str,
+    step_description: str,
+    violation: str,
+) -> str:
+    """Вызывает LLM для генерации уточняющего вопроса при нарушении инварианта.
+
+    Args:
+        client: Клиент OpenAI.
+        model: Идентификатор модели.
+        step_title: Заголовок шага.
+        step_description: Описание шага.
+        violation: Текст нарушения инварианта.
+
+    Returns:
+        Уточняющий вопрос (строка).
+    """
+    prompt = (
+        f"Given step '{step_title}': '{step_description}'. "
+        f"Validation failed: '{violation}'. "
+        "Generate ONE short clarifying question that would help resolve this. "
+        "Return only the question."
+    )
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=128,
+            temperature=0.3,
+        )
+        return (response.choices[0].message.content or "").strip()
+    except Exception as exc:
+        logger.warning("Не удалось сгенерировать уточняющий вопрос: %s", exc)
+        return f"Как улучшить шаг '{step_title}' с учётом нарушения: {violation}?"
 
 
 def build_context_by_strategy(

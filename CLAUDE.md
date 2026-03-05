@@ -1,92 +1,215 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Этот файл предоставляет руководство для Claude Code (claude.ai/code) при работе с кодом в этом репозитории.
 
-## Project Overview
+## Обзор проекта
 
-CLI chatbot with OpenAI-compatible APIs featuring a three-tier memory system, pluggable context strategies, and persistent session management.
+CLI-чатбот с OpenAI-совместимыми API, включающий трехуровневую систему памяти, подключаемые стратегии контекста, постоянное управление сессиями, конечный автомат планирования задач и режим Plan с циклом самокоррекции (инварианты + авто-ретрай).
 
-## Commands
+## Команды
 
 ```bash
-# Setup
+# Настройка
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-# Run
-python script.py                          # New session
-python script.py --resume                 # Resume last session
+# Запуск
+python script.py                          # Новая сессия
+python script.py --resume                 # Возобновить последнюю сессию
 python script.py -m "gpt-4" -T 0.8 --strategy sticky_facts
 
-# Test
+# Тестирование
 python -m pytest tests/ -v
-python -m pytest tests/test_memory.py -v  # Single module
-python -m pytest tests/ -k "memory" -v   # Filter by keyword
-python -m pytest tests/ --cov=chatbot     # With coverage
+python -m pytest tests/test_memory.py -v  # Отдельный модуль
+python -m pytest tests/ -k "memory" -v   # Фильтр по ключевому слову
+python -m pytest tests/ --cov=chatbot --cov-report=term-missing  # С покрытием кода
 ```
 
-Requires `API_KEY` set in `.env` (see `.env.example`).
+Требуется установка `API_KEY` в `.env` (см. `.env.example`).
 
-## Architecture
+## Архитектура
 
-### Package Structure
+### Структура пакетов
 
 ```
-script.py          # Entry point (imports chatbot.main)
+script.py          # Точка входа (импортирует chatbot.main)
 chatbot/
-  main.py          # Dialogue loop, command dispatch, API calls (722 LOC)
-  cli.py           # argparse setup + inline /command parsing
-  config.py        # Constants + SessionConfig (Pydantic)
-  models.py        # All Pydantic models (ChatMessage, DialogueSession, etc.)
-  memory.py        # Three-tier memory classes + unified Memory facade
-  memory_storage.py # Persistence for all three memory tiers
-  storage.py       # Session file + per-request metrics logging
-  context.py       # Three context strategy implementations
+  main.py          # Диалоговый цикл, обработка команд, вызовы API
+  cli.py           # Настройка argparse + встроенный парсинг /команд
+  config.py        # Константы + SessionConfig (Pydantic)
+  models.py        # Все Pydantic-модели (ChatMessage, DialogueSession, AgentMode/TaskPlan и др.)
+  memory.py        # Классы трехуровневой памяти + унифицированный фасад Memory
+  memory_storage.py # Сохранение всех трех уровней памяти
+  storage.py       # Файл сессии + логирование метрик для каждого запроса
+  context.py       # Стратегии контекста + функции Plan-режима (build_agent_system_prompt и др.)
+  task_storage.py  # Сохранение планов/шагов задач (с привязкой к профилю)
 ```
 
-### Three-Tier Memory System
+### Трехуровневая система памяти
 
-`Memory` class unifies three independent stores:
+Класс `Memory` объединяет три независимых хранилища:
 
-| Tier | Class | Scope | Storage path |
+| Уровень | Класс | Область действия | Путь хранения |
 |------|-------|-------|--------------|
-| Short-term | `ShortTermMemory` | Current session messages | `dialogues/memory/short_term/` |
-| Working | `WorkingMemory` | Current task/preferences | `dialogues/memory/working/` |
-| Long-term | `LongTermMemory` | User profile, decisions | `dialogues/memory/long_term/` |
+| Краткосрочная | `ShortTermMemory` | Сообщения текущей сессии | `dialogues/{profile}/memory/short_term/` |
+| Рабочая | `WorkingMemory` | Текущая задача/предпочтения | `dialogues/{profile}/memory/working/` |
+| Долгосрочная | `LongTermMemory` | Профиль пользователя, решения | `dialogues/{profile}/memory/long_term/` |
 
-### Context Strategies
+### Стратегии контекста
 
-Three pluggable strategies selected via `--strategy` or `/strategy` inline command:
+Три подключаемые стратегии, выбираемые через `--strategy` или встроенную команду `/strategy`:
 
-- **sliding_window** (default): Keeps last N messages verbatim; older messages are LLM-summarized
-- **sticky_facts**: Extracts and prepends key facts as a system message; managed with `/setfact`/`/delfact`
-- **branching**: Creates checkpoints (`/checkpoint`) and independent branches (`/branch`, `/switch`)
+- **sliding_window** (по умолчанию): Сохраняет последние N сообщений дословно; более старые сообщения суммируются LLM
+- **sticky_facts**: Извлекает и добавляет ключевые факты как системное сообщение; управляется через `/setfact`/`/delfact`
+- **branching**: Создает контрольные точки (`/checkpoint`) и независимые ветки (`/branch`, `/switch`)
 
-### Session Persistence
+### Хранение с привязкой к профилю
 
-Two independent persistence layers:
-1. **Session file**: `dialogues/session_<timestamp>_<model>.json` — full state (messages, strategy, facts, branches)
-2. **Per-request metrics**: `dialogues/metrics/session_<id>_req_<idx>.log` — TTFT, tokens, cost in RUB
+Все данные разделены по пространствам имен `dialogues/{profile_name}/`:
 
-### Inline Commands (during dialogue)
+```
+dialogues/
+  default/
+    profile.json          ← UserProfile (автоматически создается при запуске)
+    session_*.json        ← полное состояние сессии
+    metrics/              ← логи метрик для каждого запроса
+    memory/short_term/ | working/ | long_term/
+    tasks/{task_id}/      ← планы задач и шаги
+      plan.json
+      step_001.json ...
+  Igor/                   ← именованный профиль через --profile Igor
+    ...
+```
 
-Format: `/command value` or `/command=value`
+- `--profile NAME` автоматически возобновляет последнюю сессию для этого профиля
+- Профиль по умолчанию требует явного `--resume` для загрузки истории
 
-Model params: `/temperature`, `/max-tokens`, `/model`
-Memory: `/settask`, `/remember`, `/memshow`
-Strategy: `/strategy`, `/checkpoint`, `/branch`, `/switch`, `/showfacts`, `/setfact`, `/delfact`
-Session: `/resume`, `/showsummary`
+### Сохранение сессий
 
-### Key Design Patterns
+Два независимых уровня сохранения:
+1. **Файл сессии**: `dialogues/{profile}/session_<timestamp>_<model>.json` — полное состояние (сообщения, стратегия, факты, ветки, active_task_id)
+2. **Метрики для каждого запроса**: `dialogues/{profile}/metrics/session_<id>_req_<idx>.log` — TTFT, токены, стоимость в RUB
 
-- **All domain objects use Pydantic v2** — type validation, serialization, field constraints (e.g., `temperature ∈ [0, 2]`)
-- **API integration**: `openai.OpenAI` client with configurable `base_url` (default: `https://routerai.ru/api/v1`); `top_k` passed via `extra_body`
-- **Context building** always delegates to a strategy function in `context.py`; `main.py` only orchestrates
-- **Metrics** are computed from wall-clock timestamps and logged independently from session state
+Дополнительные точки сохранения (устойчивость к сбоям):
+- **После `/task new`** — сессия сохраняется сразу после `state.active_task_id = task_id`, до вывода плана пользователю
+- **После каждого шага `/plan builder`** — сессия сохраняется сразу после `save_task_step`, до следующего шага
 
-### Default Configuration (from `config.py`)
+Это гарантирует, что `active_task_id` не теряется при Ctrl+C или обрыве соединения. При `--resume` задача восстанавливается автоматически.
 
-| Constant | Default |
+### Встроенные команды (во время диалога)
+
+Формат: `/command value` или `/command=value`
+
+Параметры модели: `/temperature`, `/max-tokens`, `/model`
+Память: `/settask`, `/remember`, `/memshow`, `/memstats`, `/memsave`, `/memload`, `/memclear`
+Стратегия: `/strategy`, `/checkpoint`, `/branch`, `/switch`, `/showfacts`, `/setfact`, `/delfact`
+Сессия: `/resume`, `/showsummary`
+Профиль: `/profile show|list|name|load|style|format|constraint`
+Задачи: `/task new|show|list|start|step|pause|resume|done|fail|load|delete|result`
+Plan: `/plan on|off|status|retries <n>|builder|result`, `/invariant add|del|list|clear`
+
+### Конечный автомат планирования задач
+
+Модели `TaskPlan` / `TaskStep` с фазами: `planning → execution → validation → done` (также `paused`, `failed`).
+
+- Планы хранятся в `dialogues/{profile}/tasks/{task_id}/plan.json`
+- Шаги хранятся как `step_001.json`, `step_002.json`, …
+- LLM генерирует шаги при `/task new <description>`; трехуровневый парсинг JSON с резервным вариантом нумерованного списка
+- Контекст активной задачи добавляется в системный промпт каждого вызова API
+- `active_task_id` сохраняется в файле сессии и восстанавливается при возобновлении
+
+#### Агрегация результатов
+
+- `TaskStep.result` — строка с результатом выполнения шага:
+  - Вручную: `/task step done <текст>`
+  - Автоматически: `_execute_builder_step` сохраняет `step.result = draft` (ответ LLM) перед вызовом `save_task_step`
+- `TaskPlan.result` — итог всей задачи:
+  - Вручную: `/task done <текст>`
+  - Автоматически: `_run_plan_builder` после завершения всех шагов собирает `step.result` в строку формата `"Шаг N. Title:\nresult"` и записывает в `plan.result` → `plan.json`
+- `/task result [task_id]` — выводит только результаты (шаги с `[✓]` + итоговый `plan.result`), без лишней информации о статусах
+- `/plan result [task_id]` — алиас для `/task result`
+
+**Исправленный баг:** до фикса `_execute_builder_step` выводил `draft` на экран, но не записывал в `step.result`, поэтому `plan.result` всегда оставался пустым после `/plan builder`.
+
+### Режим Plan (Stateful AI Agent)
+
+#### Интерактивный старт `/plan on`
+
+`/plan on` запускает управляемый онбординг из трёх шагов:
+
+1. **`awaiting_task`** — система просит ввести описание задачи
+2. **`awaiting_invariants`** — система спрашивает про инварианты:
+   - `да` → печатает подсказку, пользователь добавляет через `/invariant add`, затем `готово`
+   - `нет` / `skip` / `готово` → сразу запускает LLM-диалог
+3. **`active`** — LLM-диалог идёт с контекстом задачи и инвариантами
+
+#### Состояния `plan_dialog_state`
+
+| Состояние | Смысл |
+|-----------|-------|
+| `"awaiting_task"` | Ждём описание задачи от пользователя |
+| `"awaiting_invariants"` | Ждём да/нет/готово про инварианты |
+| `"active"` | LLM-диалог планирования идёт |
+| `"confirming"` | Подтверждение черновика плана (создать задачи?) |
+| `None` | Режим выключен |
+
+#### Агентский цикл (состояние `active`)
+
+1. **Создание промпта** — системный промпт строится из шаблона (Роль + Профиль + Текущее состояние + Инварианты)
+2. **Генерация черновика** — обычный вызов LLM
+3. **Проверка** — отдельный вызов LLM проверяет черновик против каждого инварианта; если `FAIL` → повтор (до `max_retries`)
+4. **Парсинг вывода** — извлекает блоки `**Response:**` и `**State Update:**`; обновления состояния автоматически сохраняются в `working.preferences`
+
+Ключевые функции в `context.py`: `build_agent_system_prompt`, `validate_draft_against_invariants`, `parse_agent_output`.
+Новые функции в `main.py`: `_handle_plan_awaiting_task`, `_handle_plan_awaiting_invariants`.
+
+### Тестовое покрытие
+
+Текущее покрытие: **95%** (709 тестов).
+
+| Модуль | Покрытие |
+|--------|---------|
+| `cli.py` | 97% |
+| `config.py` | 100% |
+| `context.py` | 99% |
+| `main.py` | 92% |
+| `memory.py` | 100% |
+| `memory_storage.py` | 100% |
+| `models.py` | 100% |
+| `storage.py` | 100% |
+| `task_storage.py` | 100% |
+
+Тестовые файлы:
+
+| Файл | Что покрывает |
+|------|--------------|
+| `tests/test_memory.py` | Трёхуровневая память, `Memory` facade |
+| `tests/test_storage.py` | Сохранение сессий, метрики |
+| `tests/test_task_models.py` | Модели `TaskPlan`/`TaskStep` |
+| `tests/test_task_cli.py` | CLI-команды задач |
+| `tests/test_task_storage.py` | Хранение планов/шагов |
+| `tests/test_agent.py` | Агентский режим, `/plan on` FSM, инварианты |
+| `tests/test_cli_coverage.py` | Ветки `cli.py`: алиасы стратегий, setfact, delfact, profile, memory |
+| `tests/test_context_coverage.py` | Ветки `context.py`: extract_facts, sticky_facts, branching, builder_prompt |
+| `tests/test_memory_storage_coverage.py` | Exception-пути и happy-paths `memory_storage.py` |
+| `tests/test_models_coverage.py` | `StickyFacts`, `UserProfile.to_system_prompt` |
+| `tests/test_task_storage_coverage.py` | Corrupt JSON, список планов, удаление |
+| `tests/test_main_helpers.py` | Хелперы `main.py`: парсинг шагов, plan FSM, команды задач, профили |
+| `tests/test_main_coverage2.py` | Глубокие ветки `main.py`: builder, kick_off_plan, dialog, apply_inline |
+
+**Известный баг (pre-existing):** в `_apply_inline_updates` ветка `/memshow` обращается к `mem.long_term.user_profile`, тогда как атрибут называется `mem.long_term.profile`. Тест `test_memshow` проверяет это через `pytest.raises(AttributeError)`.
+
+### Ключевые паттерны проектирования
+
+- **Все объекты предметной области используют Pydantic v2** — проверка типов, сериализация, ограничения полей (например, `temperature ∈ [0, 2]`)
+- **Интеграция API**: клиент `openai.OpenAI` с настраиваемым `base_url` (по умолчанию: `https://routerai.ru/api/v1`); `top_k` передается через `extra_body`
+- **Построение контекста** всегда делегируется функции стратегии в `context.py`; `main.py` только оркестрирует
+- **Метрики** вычисляются из временных меток реального времени и логируются независимо от состояния сессии
+- **Изоляция профилей**: все функции хранения принимают параметр `profile_name`; `DEFAULT_PROFILE = "default"`
+
+### Конфигурация по умолчанию (из `config.py`)
+
+| Константа | Значение по умолчанию |
 |----------|---------|
 | `DEFAULT_MODEL` | `inception/mercury-coder` |
 | `DEFAULT_TEMPERATURE` | `0.7` |

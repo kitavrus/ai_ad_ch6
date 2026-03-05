@@ -1,0 +1,13 @@
+{
+  "step_id": "1a43d5edce364f5ab3e2bc68b4b11489_step_001",
+  "task_id": "1a43d5edce364f5ab3e2bc68b4b11489",
+  "index": 1,
+  "title": "Identify common Python topics",
+  "description": "List the most frequently discussed Python subjects such as data types, control flow, and libraries.",
+  "status": "done",
+  "notes": "",
+  "result": "Наиболее часто обсуждаемые темы в Python включают:\n\n1. **Типы данных** – числа, строки, списки, кортежи, множества, словари, булевы значения.  \n2. **Управление потоком** – условные конструкции (`if`, `elif`, `else`), циклы (`for`, `while`), оператор `break`/`continue`.  \n3. **Функции и лямбда** – определение функций (`def`), аргументы, возвращаемые значения, лямбда‑выражения.  \n4. **Объектно‑ориентированное программирование (ООП)** – классы, наследование, инкапсуляция, полиморфизм.  \n5. **Исключения и обработка ошибок** – `try`, `except`, `finally`, `raise`.  \n6. **Работа с файлами** – открытие, чтение, запись, закрытие файлов, контекстные менеджеры (`with`).  \n7. **Модули и пакеты** – импорт, структура пакетов, стандартная библиотека.  \n8. **Встроенные функции** – `len`, `range`, `enumerate`, `zip`, `map`, `filter`, `sum`, `max`, `min`.  \n9. **Коллекции из модуля `collections`** – `namedtuple`, `deque`, `defaultdict`, `OrderedDict`, `Counter`.  \n10. **Работа с внешними библиотеками** – `pip`, `requirements.txt`, популярные пакеты: `NumPy`, `Pandas`, `Matplotlib`, `Requests`, `Flask`, `Django`.  \n11. **Асинхронное программирование** – `asyncio`, `async`/`await`, корутины.  \n12. **Тестирование и отладка** – `unittest`, `pytest`, `pdb`, `logging`.  \n13. **Пакетирование и распространение** – `setup.py`, `pyproject.toml`, `wheel`, `conda`.  \n14. **Работа с базами данных** – `sqlite3`, `SQLAlchemy`, драйверы для MySQL/PostgreSQL.  \n15. **Многопоточность и многопроцессность** – модули `threading`, `multiprocessing`, `concurrent.futures`.",
+  "created_at": "2026-03-05T07:13:57.856217",
+  "started_at": null,
+  "completed_at": "2026-03-05T07:14:00.739874"
+}

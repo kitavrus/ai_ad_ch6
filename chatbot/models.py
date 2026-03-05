@@ -21,6 +21,82 @@ class ContextStrategy(str, enum.Enum):
 
 
 # ---------------------------------------------------------------------------
+# Режим Stateful AI Agent
+# ---------------------------------------------------------------------------
+
+
+class AgentMode(BaseModel):
+    """Конфигурация режима Stateful AI Agent с инвариантами и self-correction."""
+
+    enabled: bool = False
+    invariants: List[str] = Field(default_factory=list)
+    max_retries: int = Field(default=3, ge=1, le=10)
+
+
+# ---------------------------------------------------------------------------
+# Система управления задачами (Task Planning State Machine)
+# ---------------------------------------------------------------------------
+
+
+class TaskPhase(str, enum.Enum):
+    """Фаза задачи в конечном автомате."""
+
+    PLANNING = "planning"
+    EXECUTION = "execution"
+    VALIDATION = "validation"
+    DONE = "done"
+    PAUSED = "paused"
+    FAILED = "failed"
+
+
+class StepStatus(str, enum.Enum):
+    """Статус отдельного шага задачи."""
+
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    DONE = "done"
+    SKIPPED = "skipped"
+    FAILED = "failed"
+
+
+class TaskStep(BaseModel):
+    """Один шаг задачи — хранится в отдельном файле step_NNN.json."""
+
+    step_id: str
+    task_id: str
+    index: int = Field(ge=1)
+    title: str
+    description: str = ""
+    status: StepStatus = StepStatus.PENDING
+    notes: str = ""
+    result: str = ""
+    created_at: str
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+
+
+class TaskPlan(BaseModel):
+    """Индекс плана задачи — хранится в файле plan.json директории задачи."""
+
+    task_id: str
+    profile_name: str = "default"
+    name: str
+    description: str = ""
+    phase: TaskPhase = TaskPhase.PLANNING
+    step_ids: List[str] = []
+    total_steps: int = 0
+    current_step_index: int = 0  # 0-based
+    created_at: str
+    updated_at: str
+    completed_at: Optional[str] = None
+    failure_reason: Optional[str] = None
+    result: str = ""
+    llm_raw_response: Optional[str] = None
+    clarifications: List[Dict[str, str]] = Field(default_factory=list)
+    """Список уточнений: [{"question": "...", "answer": "..."}]"""
+
+
+# ---------------------------------------------------------------------------
 # Сообщения
 # ---------------------------------------------------------------------------
 
@@ -201,6 +277,9 @@ class DialogueSession(BaseModel):
     sticky_facts: Dict[str, str] = Field(default_factory=dict)
     branches: List[Branch] = Field(default_factory=list)
     active_branch_id: Optional[str] = None
+    active_task_id: Optional[str] = None
+    agent_mode: Optional[Dict[str, Any]] = None
+    plan_dialog_state: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -236,5 +315,10 @@ class SessionState(BaseModel):
     last_checkpoint: Optional[DialogueCheckpoint] = None
     memory: Any = Field(default=None, description="Объект Memory (три типа памяти)")
     profile_name: str = Field(default="default", description="Активный профиль пользователя")
+    active_task_id: Optional[str] = None
+    agent_mode: AgentMode = Field(default_factory=AgentMode)
+    plan_dialog_state: Optional[str] = None
+    plan_draft_steps: List[dict] = Field(default_factory=list)
+    plan_draft_description: str = ""
 
     model_config = {"arbitrary_types_allowed": True}

@@ -1,0 +1,12 @@
+{
+  "step_id": "bd34ae2df23944eeb9ca3908285a2945_step_003",
+  "task_id": "bd34ae2df23944eeb9ca3908285a2945",
+  "index": 3,
+  "title": "Create task model",
+  "description": "Implement a SQLAlchemy ORM class for tasks with fields: id, title, description, status, created_at, updated_at.",
+  "status": "done",
+  "notes": "",
+  "created_at": "2026-03-05T06:43:02.600164",
+  "started_at": null,
+  "completed_at": "2026-03-05T06:44:47.327730"
+}
