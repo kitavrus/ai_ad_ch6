@@ -2,7 +2,7 @@
 
 from datetime import datetime
 import enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 from pydantic import BaseModel, Field
 
@@ -46,6 +46,21 @@ class TaskPhase(str, enum.Enum):
     DONE = "done"
     PAUSED = "paused"
     FAILED = "failed"
+
+
+ALLOWED_TRANSITIONS: Dict[TaskPhase, Set[TaskPhase]] = {
+    TaskPhase.PLANNING:   {TaskPhase.EXECUTION, TaskPhase.FAILED},
+    TaskPhase.EXECUTION:  {TaskPhase.VALIDATION, TaskPhase.PAUSED, TaskPhase.FAILED},
+    TaskPhase.VALIDATION: {TaskPhase.DONE, TaskPhase.EXECUTION},
+    TaskPhase.PAUSED:     {TaskPhase.EXECUTION, TaskPhase.FAILED},
+    TaskPhase.DONE:       set(),
+    TaskPhase.FAILED:     set(),
+}
+
+
+def can_transition(from_phase: TaskPhase, to_phase: TaskPhase) -> bool:
+    """Возвращает True, если переход между фазами разрешён."""
+    return to_phase in ALLOWED_TRANSITIONS.get(from_phase, set())
 
 
 class StepStatus(str, enum.Enum):
@@ -93,6 +108,20 @@ class TaskPlan(BaseModel):
     llm_raw_response: Optional[str] = None
     clarifications: List[Dict[str, str]] = Field(default_factory=list)
     """Список уточнений: [{"question": "...", "answer": "..."}]"""
+    project_id: Optional[str] = None
+    model: Optional[str] = None
+
+
+class Project(BaseModel):
+    """Проект — группирует несколько TaskPlan с единой целью."""
+
+    project_id: str
+    name: str
+    profile_name: str = "default"
+    description: str = ""
+    plan_ids: List[str] = Field(default_factory=list)
+    created_at: str
+    updated_at: str
 
 
 # ---------------------------------------------------------------------------
@@ -277,6 +306,8 @@ class DialogueSession(BaseModel):
     branches: List[Branch] = Field(default_factory=list)
     active_branch_id: Optional[str] = None
     active_task_id: Optional[str] = None
+    active_task_ids: List[str] = Field(default_factory=list)
+    active_project_id: Optional[str] = None
     agent_mode: Optional[Dict[str, Any]] = None
     plan_dialog_state: Optional[str] = None
 
@@ -315,6 +346,8 @@ class SessionState(BaseModel):
     memory: Any = Field(default=None, description="Объект Memory (три типа памяти)")
     profile_name: str = Field(default="default", description="Активный профиль пользователя")
     active_task_id: Optional[str] = None
+    active_task_ids: List[str] = Field(default_factory=list)
+    active_project_id: Optional[str] = None
     agent_mode: AgentMode = Field(default_factory=AgentMode)
     plan_dialog_state: Optional[str] = None
     plan_draft_steps: List[dict] = Field(default_factory=list)

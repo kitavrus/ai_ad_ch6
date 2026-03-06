@@ -11,6 +11,7 @@ from chatbot.context import (
     create_branch,
     create_checkpoint,
     extract_facts_from_llm,
+    extract_result_files,
     switch_branch,
     validate_draft_against_invariants,
 )
@@ -314,3 +315,42 @@ class TestBuildContextByStrategy:
             ContextStrategy.SLIDING_WINDOW, msgs
         )
         assert isinstance(result, list)
+
+
+# ---------------------------------------------------------------------------
+# extract_result_files
+# ---------------------------------------------------------------------------
+
+class TestExtractResultFiles:
+    def test_empty_text_returns_empty(self):
+        assert extract_result_files("") == []
+
+    def test_single_file(self):
+        text = "Some text\n### FILE: src/main.py\n```python\nprint('hi')\n```\nafter"
+        result = extract_result_files(text)
+        assert len(result) == 1
+        path, content = result[0]
+        assert path == "src/main.py"
+        assert "print('hi')" in content
+
+    def test_multiple_files(self):
+        text = (
+            "### FILE: a.py\n```python\nx=1\n```\n"
+            "### FILE: subdir/b.txt\n```\nhello\n```"
+        )
+        result = extract_result_files(text)
+        assert len(result) == 2
+        paths = [r[0] for r in result]
+        assert "a.py" in paths
+        assert "subdir/b.txt" in paths
+
+    def test_file_without_language_specifier(self):
+        text = "### FILE: README.md\n```\n# Title\n```"
+        result = extract_result_files(text)
+        assert len(result) == 1
+        assert result[0][0] == "README.md"
+        assert "# Title" in result[0][1]
+
+    def test_no_file_blocks_returns_empty(self):
+        text = "Just regular text with ```code``` but no FILE markers"
+        assert extract_result_files(text) == []

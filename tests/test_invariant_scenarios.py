@@ -479,6 +479,38 @@ class TestInvariantRespectedInPlanBuilder:
         assert "Как хранить без Redis?" in captured.out
         assert any(c["answer"] == "Использовать dict с TTL" for c in plan.clarifications)
 
+    def test_prompt_invariant_resolution_no_skip_option(self, capsys, monkeypatch, tmp_path):
+        """_prompt_invariant_resolution не предлагает skip и не принимает его."""
+        from chatbot.main import _prompt_invariant_resolution
+
+        monkeypatch.chdir(tmp_path)
+        state = _make_state()
+        state.agent_mode.invariants = ["Только dict/list"]
+
+        now = datetime.utcnow().isoformat()
+        step = TaskStep(
+            step_id="s3",
+            task_id="t3",
+            index=1,
+            title="Test",
+            status=StepStatus.PENDING,
+            created_at=now,
+        )
+
+        # Пользователь сначала вводит "skip" (должно быть отклонено), потом "abort"
+        inputs = iter(["skip", "abort"])
+        with patch("builtins.input", side_effect=inputs):
+            result = _prompt_invariant_resolution(
+                step, "uses Redis", state.agent_mode.invariants, state, MagicMock()
+            )
+
+        assert result == "abort"
+        captured = capsys.readouterr()
+        # skip не упомянут в вариантах
+        assert "skip" not in captured.out
+        # подсказка об ошибке выводилась (пользователь ввёл неизвестную команду)
+        assert "Неверная команда" in captured.out
+
 
 # ---------------------------------------------------------------------------
 # Phase 3: _handle_invariant_command

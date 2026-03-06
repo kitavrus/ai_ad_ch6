@@ -1061,6 +1061,7 @@ class TestRunPlanBuilderResultAggregation:
             task_id="task-agg",
             profile_name="test",
             name="Aggregation Plan",
+            phase=TaskPhase.VALIDATION,
             created_at=now,
             updated_at=now,
         )
@@ -1134,6 +1135,7 @@ class TestRunPlanBuilderResultAggregation:
             task_id="task-norez",
             profile_name="test",
             name="No Result Plan",
+            phase=TaskPhase.VALIDATION,
             created_at=now,
             updated_at=now,
         )

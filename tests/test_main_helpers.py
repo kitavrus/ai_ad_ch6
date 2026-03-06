@@ -266,9 +266,12 @@ class TestGetActivePlan:
 class TestTransitionPlan:
     def test_done_sets_completed_at(self, monkeypatch, tmp_path):
         from chatbot.main import _transition_plan
+        from chatbot.task_storage import save_task_plan
         monkeypatch.chdir(tmp_path)
         state = _make_state()
         plan, _ = _make_plan_and_steps(state, tmp_path)
+        plan.phase = TaskPhase.VALIDATION
+        save_task_plan(plan, state.profile_name)
         _transition_plan(plan, TaskPhase.DONE, state)
         assert plan.completed_at is not None
         assert plan.phase == TaskPhase.DONE
@@ -650,9 +653,12 @@ class TestHandleTaskCommand:
 
     def test_resume_with_explicit_id(self, capsys, monkeypatch, tmp_path):
         from chatbot.main import _handle_task_command
+        from chatbot.task_storage import save_task_plan
         monkeypatch.chdir(tmp_path)
         state = _make_state()
         plan, task_id = _make_plan_and_steps(state, tmp_path)
+        plan.phase = TaskPhase.PAUSED
+        save_task_plan(plan, state.profile_name)
         state.active_task_id = None  # clear it, resume by id
         _handle_task_command("resume", task_id, state, client=None)
         assert state.active_task_id == task_id
@@ -673,9 +679,12 @@ class TestHandleTaskCommand:
 
     def test_done_completes_task(self, capsys, monkeypatch, tmp_path):
         from chatbot.main import _handle_task_command
+        from chatbot.task_storage import save_task_plan
         monkeypatch.chdir(tmp_path)
         state = _make_state()
         plan, _ = _make_plan_and_steps(state, tmp_path)
+        plan.phase = TaskPhase.VALIDATION
+        save_task_plan(plan, state.profile_name)
         _handle_task_command("done", "", state, client=None)
         assert state.active_task_id is None
         assert "завершена" in capsys.readouterr().out

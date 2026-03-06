@@ -106,7 +106,7 @@ dialogues/
 Сессия: `/resume`, `/showsummary`
 Профиль: `/profile show|list|name|load|style|format|constraint`
 Задачи: `/task new|show|list|start|step|pause|resume|done|fail|load|delete|result`
-Plan: `/plan on|off|status|retries <n>|builder|result`, `/invariant add|del|list|clear`
+Plan: `/plan on|off|status|retries <n>|builder|result`, `/invariant add|del|edit|list|clear`
 
 ### Конечный автомат планирования задач
 
@@ -160,12 +160,12 @@ Plan: `/plan on|off|status|retries <n>|builder|result`, `/invariant add|del|list
 3. **Проверка** — отдельный вызов LLM проверяет черновик против каждого инварианта; если `FAIL` → повтор (до `max_retries`)
 4. **Парсинг вывода** — извлекает блоки `**Response:**` и `**State Update:**`; обновления состояния автоматически сохраняются в `working.preferences`
 
-Ключевые функции в `context.py`: `build_agent_system_prompt`, `validate_draft_against_invariants`, `parse_agent_output`.
-Новые функции в `main.py`: `_handle_plan_awaiting_task`, `_handle_plan_awaiting_invariants`.
+Ключевые функции в `context.py`: `build_agent_system_prompt`, `validate_draft_against_invariants`, `parse_agent_output`, `analyze_invariant_impact`.
+Новые функции в `main.py`: `_handle_plan_awaiting_task`, `_handle_plan_awaiting_invariants`, `_prompt_invariant_resolution`.
 
 ### Тестовое покрытие
 
-Текущее покрытие: **95%** (711 тестов).
+Текущее покрытие: **95%** (865 тестов).
 
 | Модуль | Покрытие |
 |--------|---------|
@@ -196,6 +196,12 @@ Plan: `/plan on|off|status|retries <n>|builder|result`, `/invariant add|del|list
 | `tests/test_task_storage_coverage.py` | Corrupt JSON, список планов, удаление |
 | `tests/test_main_helpers.py` | Хелперы `main.py`: парсинг шагов, plan FSM, команды задач, профили; восстановление веток из сессии; `/memclear all` |
 | `tests/test_main_coverage2.py` | Глубокие ветки `main.py`: builder, kick_off_plan, dialog, apply_inline; `/memshow` корректный вывод |
+
+**Изменения (day 15+):**
+- `/plan builder` — шаги плана **не могут быть пропущены**; при исчерпании попыток система предлагает только `edit <N> <текст>`, `remove <N>` (с проверкой влияния на другие инварианты) или `abort`
+- `/invariant edit <N> <новый текст>` — новая команда для редактирования инварианта по номеру
+- `analyze_invariant_impact` (`context.py`) — LLM-анализ последствий изменения/удаления инварианта: не ослабит ли безопасность, не создаст ли противоречие с другими ограничениями
+- `_prompt_invariant_resolution` (`main.py`) — интерактивный диалог при неудаче builder; после уточнений предлагает изменить или удалить нарушенный инвариант
 
 **Исправленные баги (day 14):**
 - `/memshow` — `mem.long_term.user_profile` → `mem.long_term.profile.name` (AttributeError устранён)

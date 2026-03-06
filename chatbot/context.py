@@ -751,6 +751,59 @@ def generate_clarification_question(
         return f"Как улучшить шаг '{step_title}' с учётом нарушения: {violation}?"
 
 
+def analyze_invariant_impact(
+    client: OpenAI,
+    model: str,
+    changed_invariant: str,
+    new_text: Optional[str],
+    all_invariants: List[str],
+) -> str:
+    """Проверяет, как изменение или удаление инварианта влияет на остальные.
+
+    Args:
+        client: Клиент OpenAI.
+        model: Идентификатор модели.
+        changed_invariant: Текст изменяемого/удаляемого инварианта.
+        new_text: Новый текст инварианта, или None если инвариант удаляется.
+        all_invariants: Список всех остальных инвариантов (без изменяемого).
+
+    Returns:
+        Строка с анализом рисков (пустая, если рисков нет).
+    """
+    if not all_invariants:
+        return ""
+
+    others = "\n".join(f"- {inv}" for inv in all_invariants)
+    if new_text:
+        action_desc = f'меняется с "{changed_invariant}" на "{new_text}"'
+    else:
+        action_desc = f'удаляется: "{changed_invariant}"'
+
+    prompt = (
+        f"Инвариант {action_desc}.\n\n"
+        f"Остальные инварианты:\n{others}\n\n"
+        "Проанализируй: не ослабит ли это изменение безопасность, "
+        "не создаст ли противоречие с другими инвариантами, "
+        "не нарушит ли зависимые ограничения?\n"
+        "Если рисков нет — ответь только: OK\n"
+        "Если есть риски — кратко опиши каждый (1-2 предложения на пункт), начни с: ПРЕДУПРЕЖДЕНИЕ:"
+    )
+    try:
+        response = client.chat.completions.create(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=256,
+            temperature=0.2,
+        )
+        result = (response.choices[0].message.content or "").strip()
+        if re.match(r"^OK\b", result, re.IGNORECASE):
+            return ""
+        return result
+    except Exception as exc:
+        logger.warning("analyze_invariant_impact error: %s", exc)
+        return ""
+
+
 def build_context_by_strategy(
     strategy: ContextStrategy,
     messages: List[ChatMessage],

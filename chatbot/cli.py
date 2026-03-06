@@ -187,6 +187,14 @@ def parse_inline_command(line: str) -> dict:
         return {"task": {"action": _parts[0].lower() if _parts else "show",
                          "arg": _parts[1].strip() if len(_parts) > 1 else ""}}
 
+    # Специальная обработка /project
+    if _first_word == "project":
+        _rest = payload[len("project"):].strip()
+        _parts = _rest.split(None, 1)
+        _sub = _parts[0].lower() if _parts else "show"
+        _arg = _parts[1].strip() if len(_parts) > 1 else ""
+        return {"project": {"action": _sub, "arg": _arg}}
+
     # Разбиваем на ключ и значение
     if "=" in payload:
         key, value = payload.split("=", 1)

@@ -7,9 +7,12 @@ from unittest.mock import patch
 
 from chatbot.task_storage import (
     delete_task_plan,
+    get_task_result_dir,
     list_task_plans,
+    list_task_result_files,
     load_task_step,
     save_task_plan,
+    save_task_result_file,
     save_task_step,
 )
 from chatbot.models import TaskPlan, TaskPhase, TaskStep, StepStatus
@@ -121,3 +124,43 @@ class TestDeleteTaskPlanException:
         save_task_plan(plan, "test")
         result = delete_task_plan("task_ok", "test")
         assert result is True
+
+
+# ---------------------------------------------------------------------------
+# get_task_result_dir / save_task_result_file / list_task_result_files
+# ---------------------------------------------------------------------------
+
+class TestTaskResultFiles:
+    def test_get_task_result_dir_path(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        from chatbot.task_storage import get_task_dir
+        expected = os.path.join(get_task_dir("tid", "test"), "result")
+        assert get_task_result_dir("tid", "test") == expected
+
+    def test_save_creates_file_and_dirs(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        saved = save_task_result_file("tid", "src/main.py", "print('hi')", "test")
+        assert os.path.isfile(saved)
+        with open(saved, encoding="utf-8") as f:
+            assert f.read() == "print('hi')"
+
+    def test_save_nested_path(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        saved = save_task_result_file("tid", "a/b/c.txt", "content", "test")
+        assert os.path.isfile(saved)
+        assert "a" + os.sep + "b" in saved
+
+    def test_list_empty_when_no_result_dir(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        result = list_task_result_files("no_such_task", "test")
+        assert result == []
+
+    def test_list_returns_sorted_relative_paths(self, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
+        save_task_result_file("tid", "z.txt", "z", "test")
+        save_task_result_file("tid", "a.txt", "a", "test")
+        save_task_result_file("tid", "sub/b.txt", "b", "test")
+        files = list_task_result_files("tid", "test")
+        assert files == sorted(files)
+        assert any("z.txt" in f for f in files)
+        assert any("a.txt" in f for f in files)

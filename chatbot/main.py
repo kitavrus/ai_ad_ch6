@@ -22,6 +22,7 @@ from chatbot.config import (
     USD_PER_1K_TOKENS,
 )
 from chatbot.context import (
+    analyze_invariant_impact,
     build_agent_system_prompt,
     build_builder_step_prompt,
     build_context_by_strategy,
@@ -53,9 +54,11 @@ from chatbot.memory_storage import (
 from chatbot.models import (
     AgentMode,
     Branch,
+    can_transition,
     ChatMessage,
     ContextStrategy,
     DialogueSession,
+    Project,
     RequestMetric,
     SessionState,
     StepStatus,
@@ -65,9 +68,16 @@ from chatbot.models import (
     TaskStep,
     TokenUsage,
 )
+from chatbot.project_storage import (
+    delete_project,
+    list_projects,
+    load_project,
+    save_project,
+)
 from chatbot.storage import load_last_session, log_request_metric, save_session
 from chatbot.task_storage import (
     delete_task_plan,
+    find_plan_by_name,
     get_task_result_dir,
     list_task_plans,
     list_task_result_files,
@@ -104,6 +114,30 @@ def _now_iso() -> str:
 def _now_str() -> str:
     """Возвращает текущее UTC-время в формате '%Y-%m-%dT%H:%M:%SZ'."""
     return datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _parse_plan_flag(arg: str) -> tuple:
+    """Извлекает --plan <name> из строки аргумента.
+
+    Возвращает (cleaned_arg, plan_name_or_none).
+    """
+    m = re.search(r"--plan\s+(\S+)", arg)
+    if m:
+        plan_name = m.group(1)
+        cleaned = (arg[: m.start()] + " " + arg[m.end() :]).strip()
+        return cleaned, plan_name
+    return arg, None
+
+
+def _resolve_plan(state: "SessionState", plan_name: Optional[str]) -> Optional["TaskPlan"]:
+    """Возвращает план по имени (из active_task_ids) или активный план."""
+    if plan_name:
+        task_id = find_plan_by_name(plan_name, state.profile_name)
+        if not task_id:
+            print(f"[План '{plan_name}' не найден. Доступные: /task list]")
+            return None
+        return load_task_plan(task_id, state.profile_name)
+    return _get_active_plan(state)
 
 
 def _require_active_plan(state: "SessionState") -> Optional["TaskPlan"]:
@@ -352,6 +386,8 @@ def _create_task_plan(
     plan.step_ids = step_ids
     save_task_plan(plan, state.profile_name)
     state.active_task_id = task_id
+    if task_id not in state.active_task_ids:
+        state.active_task_ids.append(task_id)
     # Сохраняем сессию чтобы active_task_id не потерялся при сбое
     try:
         save_session(_build_session_payload(state), state.session_path)
@@ -381,7 +417,7 @@ def _print_task_plan(plan: TaskPlan, steps: List[TaskStep]) -> None:
     print("--- Конец плана ---\n")
 
 
-def _print_task_result(plan: TaskPlan, steps: List[TaskStep]) -> None:
+def _print_task_result(plan: TaskPlan, steps: List[TaskStep], state: "SessionState") -> None:
     """Выводит только результаты выполнения задачи."""
     print(f"\n=== Результат: {plan.name} ===")
     print(f"Статус: {plan.phase.value}")
@@ -394,6 +430,12 @@ def _print_task_result(plan: TaskPlan, steps: List[TaskStep]) -> None:
         print(f"\nИтог задачи:\n{plan.result}")
     else:
         print("\n[Результат не записан. Используйте /task done <текст>]")
+    result_files = list_task_result_files(plan.task_id, state.profile_name)
+    if result_files:
+        result_dir = get_task_result_dir(plan.task_id, state.profile_name)
+        print(f"\nФайлы результата ({result_dir}):")
+        for f in result_files:
+            print(f"  {f}")
     print("=" * 40)
 
 
@@ -404,13 +446,22 @@ def _get_active_plan(state: SessionState) -> Optional[TaskPlan]:
     return load_task_plan(state.active_task_id, state.profile_name)
 
 
-def _transition_plan(plan: TaskPlan, new_phase: TaskPhase, state: SessionState) -> None:
-    """Переводит план в новую фазу и сохраняет."""
+def _transition_plan(
+    plan: TaskPlan,
+    new_phase: TaskPhase,
+    state: SessionState,
+    error_msg: str = "",
+) -> bool:
+    """Переводит план в новую фазу. Возвращает False при недопустимом переходе."""
+    if not can_transition(plan.phase, new_phase):
+        print(error_msg or f"[Переход {plan.phase.value} → {new_phase.value} недопустим]")
+        return False
     plan.phase = new_phase
     plan.updated_at = _now_iso()
     if new_phase == TaskPhase.DONE:
         plan.completed_at = plan.updated_at
     save_task_plan(plan, state.profile_name)
+    return True
 
 
 def _advance_plan(plan: TaskPlan, state: SessionState) -> None:
@@ -429,8 +480,9 @@ def _advance_plan(plan: TaskPlan, state: SessionState) -> None:
 
 
 def _handle_step_subcommand(arg: str, state: SessionState) -> None:
-    """Обрабатывает /task step done|skip|fail|note <текст>."""
-    plan = _require_active_plan(state)
+    """Обрабатывает /task step done|skip|fail|note <текст> [--plan <name>]."""
+    arg, _plan_name = _parse_plan_flag(arg)
+    plan = _resolve_plan(state, _plan_name) if _plan_name else _require_active_plan(state)
     if not plan:
         return
     if plan.phase not in (TaskPhase.EXECUTION,):
@@ -469,9 +521,11 @@ def _handle_step_subcommand(arg: str, state: SessionState) -> None:
         step.completed_at = now
         save_task_step(step, state.profile_name)
         plan.failure_reason = text or f"Шаг {step_num} провалился"
-        _transition_plan(plan, TaskPhase.FAILED, state)
-        state.active_task_id = None
-        print(f"[Задача помечена как FAILED: {plan.failure_reason}]")
+        if _transition_plan(plan, TaskPhase.FAILED, state):
+            state.active_task_id = None
+            if plan.task_id in state.active_task_ids:
+                state.active_task_ids.remove(plan.task_id)
+            print(f"[Задача помечена как FAILED: {plan.failure_reason}]")
     elif sub == "note":
         step.notes = text
         save_task_step(step, state.profile_name)
@@ -609,6 +663,94 @@ def _call_llm_for_builder_step(
     return response_text
 
 
+def _prompt_invariant_resolution(
+    step: "TaskStep",
+    violation: str,
+    invariants: list,
+    state: SessionState,
+    client: OpenAI,
+) -> str:
+    """Интерактивный диалог при исчерпании попыток выполнить шаг.
+
+    Позволяет пользователю отредактировать/удалить нарушенный инвариант.
+    Шаг нельзя пропустить — builder обязан его выполнить или остановиться.
+
+    Returns:
+        "retry"  — инвариант изменён, продолжить
+        "abort"  — остановить builder
+    """
+    print(f"\n[Builder: все попытки исчерпаны. Нарушение: {violation}]")
+    print("\nЧто делать с проблемным инвариантом?")
+    for i, inv in enumerate(invariants, 1):
+        marker = " ← нарушен" if inv.lower() in violation.lower() or violation.lower() in inv.lower() else ""
+        print(f"  {i}. {inv}{marker}")
+    print("\nВарианты:")
+    print("  edit <N> <новый текст> — изменить инвариант N")
+    print("  remove <N>            — удалить инвариант N")
+    print("  abort                 — остановить builder")
+
+    while True:
+        try:
+            raw = input("\nВаш выбор: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n[Builder: прервано пользователем]")
+            return "abort"
+
+        if not raw:
+            continue
+
+        parts = raw.split(None, 2)
+        cmd = parts[0].lower()
+
+        if cmd == "abort":
+            return "abort"
+
+        if cmd == "remove" and len(parts) >= 2:
+            try:
+                idx = int(parts[1]) - 1
+            except ValueError:
+                print("[Ожидается номер инварианта]")
+                continue
+            if not (0 <= idx < len(invariants)):
+                print(f"[Нет инварианта с номером {idx + 1}]")
+                continue
+            removed = invariants[idx]
+            others = [inv for i, inv in enumerate(invariants) if i != idx]
+            warning = analyze_invariant_impact(client, state.model, removed, None, others)
+            if warning:
+                print(f"\n{warning}")
+                confirm = input("Всё равно удалить? (да/нет): ").strip().lower()
+                if confirm not in ("да", "yes", "y"):
+                    continue
+            invariants.pop(idx)
+            print(f"[Инвариант удалён: {removed}]")
+            return "retry"
+
+        if cmd == "edit" and len(parts) >= 3:
+            try:
+                idx = int(parts[1]) - 1
+            except ValueError:
+                print("[Ожидается номер инварианта]")
+                continue
+            if not (0 <= idx < len(invariants)):
+                print(f"[Нет инварианта с номером {idx + 1}]")
+                continue
+            old_text = invariants[idx]
+            new_text = parts[2].strip()
+            others = [inv for i, inv in enumerate(invariants) if i != idx]
+            warning = analyze_invariant_impact(client, state.model, old_text, new_text, others)
+            if warning:
+                print(f"\n{warning}")
+                confirm = input("Всё равно изменить? (да/нет): ").strip().lower()
+                if confirm not in ("да", "yes", "y"):
+                    continue
+            invariants[idx] = new_text
+            print(f"[Инвариант #{idx + 1} обновлён: {new_text}]")
+            return "retry"
+
+        print("[Неверная команда. Доступны: edit <N> <текст>, remove <N>, abort]")
+
+
 def _execute_builder_step(
     step: "TaskStep",
     plan: "TaskPlan",
@@ -642,6 +784,14 @@ def _execute_builder_step(
             step.result = draft
             step.completed_at = _now_iso()
             save_task_step(step, state.profile_name)
+            # Извлечь файлы из ответа LLM и сохранить в result/
+            files = extract_result_files(draft)
+            for rel_path, content in files:
+                try:
+                    saved = save_task_result_file(step.task_id, rel_path, content, state.profile_name)
+                    logger.info("Result file saved: %s", saved)
+                except Exception as exc:
+                    logger.warning("Failed to save result file '%s': %s", rel_path, exc)
             try:
                 save_session(_build_session_payload(state), state.session_path)
             except Exception as exc:
@@ -660,8 +810,15 @@ def _execute_builder_step(
 
         # 3 fail → спрашиваем пользователя
         if clarif_rounds >= _BUILDER_MAX_CLARIFICATION_ROUNDS:
-            print(f"[Builder: шаг {step.index} не удалось выполнить после всех попыток]")
-            return False
+            result = _prompt_invariant_resolution(step, violation, invariants, state, client)
+            if result == "abort":
+                print(f"[Builder: шаг {step.index} не удалось выполнить после всех попыток]")
+                return False
+            # "retry" — инвариант изменён, обновляем локальный список и сбрасываем счётчики
+            invariants = state.agent_mode.invariants
+            retry_count = 0
+            clarif_rounds = 0
+            continue
 
         clarif_rounds += 1
         question = generate_clarification_question(
@@ -719,17 +876,27 @@ def _run_plan_builder(state: SessionState, client: OpenAI) -> None:
     all_steps = load_all_steps(plan.task_id, state.profile_name)
     all_done = all(s.status in (StepStatus.DONE, StepStatus.SKIPPED) for s in all_steps)
     if all_done:
+        # Перезагружаем план с диска (мог обновиться в ходе шагов)
+        plan = load_task_plan(plan.task_id, state.profile_name) or plan
         result_parts = []
         for s in all_steps:
             if s.result:
                 result_parts.append(f"Шаг {s.index}. {s.title}:\n{s.result}")
         if result_parts:
             plan.result = "\n\n".join(result_parts)
-        plan.phase = TaskPhase.DONE
-        plan.completed_at = _now_str()
-        plan.updated_at = plan.completed_at
-        save_task_plan(plan, state.profile_name)
+        # EXECUTION → VALIDATION → DONE (соблюдаем граф переходов)
+        if plan.phase == TaskPhase.EXECUTION:
+            _transition_plan(plan, TaskPhase.VALIDATION, state)
+        _transition_plan(plan, TaskPhase.DONE, state)
+        if plan.task_id in state.active_task_ids:
+            state.active_task_ids.remove(plan.task_id)
         print("\n[Plan builder: ПЛАН ВЫПОЛНЕН]")
+        result_files = list_task_result_files(plan.task_id, state.profile_name)
+        if result_files:
+            result_dir = get_task_result_dir(plan.task_id, state.profile_name)
+            print(f"[Plan builder: файлы результата сохранены в {result_dir}]")
+            for f in result_files:
+                print(f"  {f}")
 
 
 def _print_draft_plan(steps: List[dict]) -> None:
@@ -948,7 +1115,18 @@ def _handle_agent_command(action: str, arg: str, state: SessionState, client: Op
         except (ValueError, TypeError):
             print("[plan retries: ожидается целое число]")
     elif action == "builder":
-        _run_plan_builder(state, client)
+        _, plan_name = _parse_plan_flag(arg)
+        if plan_name:
+            orig_task_id = state.active_task_id
+            task_id = find_plan_by_name(plan_name, state.profile_name)
+            if not task_id:
+                print(f"[Plan builder: план '{plan_name}' не найден. Доступные: /task list]")
+            else:
+                state.active_task_id = task_id
+                _run_plan_builder(state, client)
+                state.active_task_id = orig_task_id
+        else:
+            _run_plan_builder(state, client)
     elif action == "result":
         _handle_task_command("result", arg, state, client)
     else:
@@ -982,11 +1160,121 @@ def _handle_invariant_command(action: str, arg: str, state: SessionState) -> Non
             for i, text in enumerate(inv, 1):
                 print(f"  {i}. {text}")
             print("--- Конец ---\n")
+    elif action in ("edit", "update"):
+        parts = arg.split(None, 1) if arg else []
+        if len(parts) < 2:
+            print("[invariant edit: ожидается 'edit <N> <новый текст>']")
+            return
+        try:
+            idx = int(parts[0]) - 1
+        except ValueError:
+            print("[invariant edit: ожидается номер инварианта]")
+            return
+        if not (0 <= idx < len(inv)):
+            print(f"[Нет инварианта с номером {idx + 1}]")
+            return
+        old_text = inv[idx]
+        inv[idx] = parts[1].strip()
+        print(f"[Инвариант #{idx + 1} изменён: '{old_text}' → '{inv[idx]}']")
     elif action == "clear":
         inv.clear()
         print("[Все инварианты удалены]")
     else:
-        print(f"[Неизвестная подкоманда invariant: {action!r}. Доступны: add, del, list, clear]")
+        print(f"[Неизвестная подкоманда invariant: {action!r}. Доступны: add, del, edit, list, clear]")
+
+
+def _handle_project_command(action: str, arg: str, state: SessionState) -> None:
+    """Диспетчер команды /project."""
+    if action == "new":
+        if not arg:
+            print("[/project new требует название проекта]")
+            return
+        project_id = uuid.uuid4().hex[:12]
+        now = _now_iso()
+        project = Project(
+            project_id=project_id,
+            name=arg,
+            profile_name=state.profile_name,
+            created_at=now,
+            updated_at=now,
+        )
+        save_project(project, state.profile_name)
+        state.active_project_id = project_id
+        print(f"[Проект создан: {project.name} | ID: {project_id[:8]}]")
+
+    elif action == "list":
+        projects = list_projects(state.profile_name)
+        if not projects:
+            print("[Проектов нет. Создайте: /project new <название>]")
+            return
+        print("\n--- Проекты ---")
+        for p in projects:
+            active_mark = " ◀ активный" if p["project_id"] == state.active_project_id else ""
+            print(f"  [{p['project_id'][:8]}] {p['name']} | планов: {p['plan_count']}{active_mark}")
+        print("---\n")
+
+    elif action == "switch":
+        if not arg:
+            print("[/project switch требует название или ID проекта]")
+            return
+        projects = list_projects(state.profile_name)
+        match = next(
+            (p for p in projects if p["name"].lower() == arg.lower() or p["project_id"].startswith(arg)),
+            None,
+        )
+        if not match:
+            print(f"[Проект не найден: {arg}]")
+            return
+        state.active_project_id = match["project_id"]
+        print(f"[Активный проект: {match['name']}]")
+
+    elif action == "show":
+        if not state.active_project_id:
+            print("[Нет активного проекта. Выберите: /project switch <название>]")
+            return
+        project = load_project(state.active_project_id, state.profile_name)
+        if not project:
+            print(f"[Проект не найден: {state.active_project_id}]")
+            return
+        print(f"\n--- Проект: {project.name} ---")
+        if project.description:
+            print(f"  {project.description}")
+        if not project.plan_ids:
+            print("  (нет планов)")
+        else:
+            for tid in project.plan_ids:
+                plan = load_task_plan(tid, state.profile_name)
+                if plan:
+                    model_tag = f" [{plan.model}]" if plan.model else ""
+                    active_tag = " ◀ активный" if tid == state.active_task_id else ""
+                    print(f"  [{plan.phase.value}] {plan.name}{model_tag}{active_tag}")
+        print("---\n")
+
+    elif action == "add-plan":
+        if not arg:
+            print("[/project add-plan требует ID задачи]")
+            return
+        if not state.active_project_id:
+            print("[Нет активного проекта. Выберите: /project switch <название>]")
+            return
+        project = load_project(state.active_project_id, state.profile_name)
+        if not project:
+            print(f"[Проект не найден: {state.active_project_id}]")
+            return
+        plan = load_task_plan(arg, state.profile_name)
+        if not plan:
+            print(f"[Задача не найдена: {arg}]")
+            return
+        if arg not in project.plan_ids:
+            project.plan_ids.append(arg)
+            project.updated_at = _now_iso()
+            save_project(project, state.profile_name)
+        plan.project_id = project.project_id
+        save_task_plan(plan, state.profile_name)
+        print(f"[План '{plan.name}' добавлен в проект '{project.name}']")
+
+    else:
+        print(f"[Неизвестная подкоманда project: {action!r}. Доступны: new, list, switch, show, add-plan]")
 
 
 def _handle_task_command(action: str, arg: str, state: SessionState, client: OpenAI) -> None:
@@ -1011,7 +1299,11 @@ def _handle_task_command(action: str, arg: str, state: SessionState, client: Ope
             return
         print("\n--- Список задач ---")
         for p in plans:
-            active_mark = " ◀ активная" if p["task_id"] == state.active_task_id else ""
+            active_mark = (
+                " ◀ активная" if p["task_id"] == state.active_task_id
+                else " ◀ запущена" if p["task_id"] in state.active_task_ids
+                else ""
+            )
             print(
                 f"  [{p['task_id'][:8]}] {p['name']} | {p['phase']} "
                 f"| {p['current_step_index']}/{p['total_steps']}{active_mark}"
@@ -1019,12 +1311,17 @@ def _handle_task_command(action: str, arg: str, state: SessionState, client: Ope
         print("--- Конец ---\n")
 
     elif action == "start":
-        plan = _require_active_plan(state)
+        _arg, _plan_name = _parse_plan_flag(arg)
+        plan = _resolve_plan(state, _plan_name) if _plan_name else _require_active_plan(state)
         if not plan:
             return
         if plan.phase != TaskPhase.PLANNING:
             print(f"[Задача уже в фазе: {plan.phase.value}]")
             return
+        if _plan_name:
+            state.active_task_id = plan.task_id
+            if plan.task_id not in state.active_task_ids:
+                state.active_task_ids.append(plan.task_id)
         first_step = load_task_step(plan.task_id, 1, state.profile_name)
         if first_step:
             first_step.status = StepStatus.IN_PROGRESS
@@ -1039,49 +1336,87 @@ def _handle_task_command(action: str, arg: str, state: SessionState, client: Ope
         _handle_step_subcommand(arg, state)
 
     elif action == "pause":
-        plan = _require_active_plan(state)
+        _arg, _plan_name = _parse_plan_flag(arg)
+        plan = _resolve_plan(state, _plan_name) if _plan_name else _require_active_plan(state)
         if not plan:
+            return
+        if plan.phase != TaskPhase.EXECUTION:
+            print(
+                f"[Нельзя приостановить задачу в фазе {plan.phase.value}. Нужна фаза: execution]"
+            )
             return
         _transition_plan(plan, TaskPhase.PAUSED, state)
         print(f"[Задача приостановлена: {plan.name}]")
 
     elif action == "resume":
-        if arg:
-            plan = load_task_plan(arg, state.profile_name)
+        _arg, _plan_name = _parse_plan_flag(arg)
+        _lookup = _plan_name or _arg.strip()
+        if _lookup:
+            plan = load_task_plan(_lookup, state.profile_name)
             if not plan:
-                print(f"[Задача не найдена: {arg}]")
+                # попробуем найти по имени
+                _tid = find_plan_by_name(_lookup, state.profile_name)
+                plan = load_task_plan(_tid, state.profile_name) if _tid else None
+            if not plan:
+                print(f"[Задача не найдена: {_lookup}]")
                 return
             state.active_task_id = plan.task_id
+            if plan.task_id not in state.active_task_ids:
+                state.active_task_ids.append(plan.task_id)
         else:
             plan = _get_active_plan(state)
             if not plan:
                 print("[Нет активной задачи для возобновления]")
                 return
+        if plan.phase not in (TaskPhase.PAUSED, TaskPhase.VALIDATION):
+            print(
+                f"[Нельзя возобновить задачу в фазе {plan.phase.value}. "
+                "Нужна фаза: paused или validation]"
+            )
+            return
         _transition_plan(plan, TaskPhase.EXECUTION, state)
         steps = load_all_steps(plan.task_id, state.profile_name)
         print(f"\n[Задача возобновлена: {plan.name}]")
         _print_task_plan(plan, steps)
 
     elif action == "done":
-        plan = _require_active_plan(state)
+        _arg, _plan_name = _parse_plan_flag(arg)
+        plan = _resolve_plan(state, _plan_name) if _plan_name else _require_active_plan(state)
         if not plan:
             return
-        if arg:
-            plan.result = arg
+        if plan.phase != TaskPhase.VALIDATION:
+            print(
+                f"[Нельзя завершить задачу в фазе {plan.phase.value}. "
+                "Сначала выполните все шаги (/task step done) — задача перейдёт в validation.]"
+            )
+            return
+        if _arg:
+            plan.result = _arg
         _transition_plan(plan, TaskPhase.DONE, state)
         state.active_task_id = None
+        if plan.task_id in state.active_task_ids:
+            state.active_task_ids.remove(plan.task_id)
         print(f"[Задача завершена: {plan.name}]")
-        if arg:
-            print(f"  Итог: {arg}")
+        if _arg:
+            print(f"  Итог: {_arg}")
 
     elif action == "fail":
-        plan = _require_active_plan(state)
+        _arg, _plan_name = _parse_plan_flag(arg)
+        plan = _resolve_plan(state, _plan_name) if _plan_name else _require_active_plan(state)
         if not plan:
             return
-        plan.failure_reason = arg or "Задача провалена вручную"
-        _transition_plan(plan, TaskPhase.FAILED, state)
-        state.active_task_id = None
-        print(f"[Задача помечена как FAILED: {plan.failure_reason}]")
+        if plan.phase == TaskPhase.DONE:
+            print("[Нельзя провалить завершённую задачу. Фаза: done — терминальное состояние.]")
+            return
+        if plan.phase == TaskPhase.FAILED:
+            print("[Задача уже помечена как FAILED.]")
+            return
+        plan.failure_reason = _arg or "Задача провалена вручную"
+        if _transition_plan(plan, TaskPhase.FAILED, state):
+            state.active_task_id = None
+            if plan.task_id in state.active_task_ids:
+                state.active_task_ids.remove(plan.task_id)
+            print(f"[Задача помечена как FAILED: {plan.failure_reason}]")
 
     elif action == "load":
         if not arg:
@@ -1118,7 +1453,7 @@ def _handle_task_command(action: str, arg: str, state: SessionState, client: Ope
             print(f"[Задача не найдена: {task_id}]")
             return
         steps = load_all_steps(plan.task_id, state.profile_name)
-        _print_task_result(plan, steps)
+        _print_task_result(plan, steps, state)
 
     else:
         print(f"[Неизвестная подкоманда task: {action!r}]")
@@ -1174,6 +1509,12 @@ def _apply_session_data(data: dict, state: SessionState) -> None:
         state.active_branch_id = data["active_branch_id"]
     if "active_task_id" in data:
         state.active_task_id = data["active_task_id"]
+    if "active_task_ids" in data and isinstance(data["active_task_ids"], list):
+        state.active_task_ids = data["active_task_ids"]
+    elif state.active_task_id and state.active_task_id not in state.active_task_ids:
+        state.active_task_ids.append(state.active_task_id)
+    if "active_project_id" in data:
+        state.active_project_id = data["active_project_id"]
     if data.get("agent_mode"):
         state.agent_mode = AgentMode(**data["agent_mode"])
     if data.get("plan_dialog_state"):
@@ -1433,6 +1774,8 @@ def _apply_inline_updates(updates: dict, state: SessionState, client: Optional[O
             _handle_agent_command(value["action"], value.get("arg", ""), state, client)
         elif key == "invariant" and isinstance(value, dict):
             _handle_invariant_command(value["action"], value.get("arg", ""), state)
+        elif key == "project" and isinstance(value, dict):
+            _handle_project_command(value["action"], value.get("arg", ""), state)
 
         elif key == "profile" and isinstance(value, dict):
             _profile_action = value.get("action", "show")
@@ -1508,6 +1851,8 @@ def _apply_inline_updates(updates: dict, state: SessionState, client: Optional[O
                     state.profile_name = load_name
                     # Сбрасываем состояние предыдущего профиля
                     state.active_task_id = None
+                    state.active_task_ids = []
+                    state.active_project_id = None
                     state.agent_mode = AgentMode()
                     state.plan_dialog_state = None
                     state.total_tokens = 0
@@ -1580,6 +1925,8 @@ def _build_session_payload(
         branches=list(state.branches),
         active_branch_id=state.active_branch_id,
         active_task_id=state.active_task_id,
+        active_task_ids=list(state.active_task_ids),
+        active_project_id=state.active_project_id,
         agent_mode=state.agent_mode.model_dump(),
         plan_dialog_state=state.plan_dialog_state,
     )

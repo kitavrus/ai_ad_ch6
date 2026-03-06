@@ -216,6 +216,15 @@ def list_task_plans(profile_name: str = DEFAULT_PROFILE) -> List[dict]:
     return result
 
 
+def find_plan_by_name(name: str, profile_name: str = DEFAULT_PROFILE) -> Optional[str]:
+    """Возвращает task_id первого плана с данным именем (без учёта регистра), или None."""
+    name_lower = name.lower()
+    for entry in list_task_plans(profile_name):
+        if entry.get("name", "").lower() == name_lower:
+            return entry["task_id"]
+    return None
+
+
 # ===========================================================================
 # УДАЛЕНИЕ ЗАДАЧИ
 # ===========================================================================
