@@ -212,17 +212,33 @@ class TestValidateDraftAgainstInvariants:
         assert passed is False
         assert "SQL" in reason
 
+    def test_pass_quoted(self):
+        """LLM returns "PASS" with quotes — should still be treated as PASS."""
+        client = self._make_client('"PASS"')
+        passed, reason = validate_draft_against_invariants(client, "gpt-4", "Hello", ["be polite"])
+        assert passed is True
+        assert reason == ""
+
+    def test_fail_with_invariant_number(self):
+        """LLM returns FAIL with invariant number and text — reason should contain it."""
+        client = self._make_client("FAIL: Invariant 1 (no SQL): uses SELECT")
+        passed, reason = validate_draft_against_invariants(
+            client, "gpt-4", "SELECT * FROM users", ["no SQL"]
+        )
+        assert passed is False
+        assert "Invariant 1" in reason
+
     def test_empty_invariants_always_pass(self):
         client = MagicMock()
         passed, reason = validate_draft_against_invariants(client, "gpt-4", "anything", [])
         assert passed is True
         client.chat.completions.create.assert_not_called()
 
-    def test_api_error_returns_pass(self):
+    def test_api_error_returns_fail(self):
         client = MagicMock()
         client.chat.completions.create.side_effect = Exception("network error")
         passed, reason = validate_draft_against_invariants(client, "gpt-4", "text", ["inv"])
-        assert passed is True
+        assert passed is False
 
 
 # ---------------------------------------------------------------------------
@@ -326,8 +342,10 @@ class TestGenerateClarificationQuestion:
 
 
 class TestRunPlanBuilderNoActiveTask:
-    def test_no_active_task(self, capsys):
+    def test_no_active_task(self, capsys, monkeypatch, tmp_path):
         from chatbot.main import _run_plan_builder
+
+        monkeypatch.chdir(tmp_path)
 
         state = SessionState(
             model="gpt-4",
@@ -343,6 +361,84 @@ class TestRunPlanBuilderNoActiveTask:
 
         captured = capsys.readouterr()
         assert "нет активной задачи" in captured.out.lower()
+
+    def test_auto_loads_last_unfinished_task(self, capsys, monkeypatch, tmp_path):
+        from chatbot.main import _run_plan_builder
+
+        monkeypatch.chdir(tmp_path)
+
+        state = SessionState(
+            model="gpt-4",
+            base_url="https://api.example.com",
+            temperature=0.7,
+            top_p=0.9,
+            top_k=50,
+        )
+        state.active_task_id = None
+        mock_client = MagicMock()
+
+        fake_plan = {
+            "task_id": "abc123",
+            "name": "Test Task",
+            "phase": "execution",
+            "updated_at": "2026-03-06T10:00:00",
+            "created_at": "2026-03-06T09:00:00",
+        }
+
+        monkeypatch.setattr("chatbot.main.list_task_plans", lambda profile_name: [fake_plan])
+        monkeypatch.setattr("chatbot.main.load_task_plan", lambda task_id, profile_name: None)
+
+        _run_plan_builder(state, mock_client)
+
+        assert state.active_task_id == "abc123"
+        captured = capsys.readouterr()
+        assert "Test Task" in captured.out
+
+
+class TestRunPlanBuilderKeyboardInterrupt:
+    def test_keyboard_interrupt_during_step_prints_message(self, capsys, monkeypatch, tmp_path):
+        """Ctrl+C во время шага завершается чисто: сообщение о прерывании, нет трейсбека."""
+        from chatbot.main import _run_plan_builder
+        from chatbot.models import StepStatus, TaskPlan, TaskStep
+        from datetime import datetime
+
+        monkeypatch.chdir(tmp_path)
+
+        state = SessionState(
+            model="gpt-4",
+            base_url="https://api.example.com",
+            temperature=0.7,
+            top_p=0.9,
+            top_k=50,
+            profile_name="test",
+        )
+        state.active_task_id = "task-ki"
+
+        now = datetime.utcnow().isoformat()
+        plan = TaskPlan(
+            task_id="task-ki",
+            profile_name="test",
+            name="Interrupt Plan",
+            created_at=now,
+            updated_at=now,
+        )
+        step1 = TaskStep(
+            step_id="s1", task_id="task-ki", index=1,
+            title="Done step", status=StepStatus.DONE, created_at=now,
+        )
+        step2 = TaskStep(
+            step_id="s2", task_id="task-ki", index=2,
+            title="Interrupted step", status=StepStatus.PENDING, created_at=now,
+        )
+
+        with patch("chatbot.main.load_task_plan", return_value=plan), \
+             patch("chatbot.main.load_all_steps", return_value=[step1, step2]), \
+             patch("chatbot.main._execute_builder_step", side_effect=KeyboardInterrupt):
+            _run_plan_builder(state, MagicMock())
+
+        out = capsys.readouterr().out
+        assert "прерван" in out.lower()
+        assert "прогресс сохранён" in out.lower() or "/plan builder" in out
 
 
 class TestRunPlanBuilderAllDone:
@@ -1074,3 +1170,149 @@ class TestRunPlanBuilderResultAggregation:
         assert saved_plans[0].phase == TaskPhase.DONE
         assert not saved_plans[0].result  # stays empty
 
+
+# ---------------------------------------------------------------------------
+# _handle_plan_dialog_message — invariant validation
+# ---------------------------------------------------------------------------
+
+
+class TestHandlePlanDialogMessageInvariants:
+    def _make_state(self, invariants=None):
+        state = SessionState(
+            model="gpt-4",
+            base_url="https://api.example.com",
+            temperature=0.7,
+            top_p=0.9,
+            top_k=50,
+        )
+        state.plan_dialog_state = "active"
+        state.agent_mode.enabled = True
+        state.agent_mode.invariants = invariants or []
+        state.agent_mode.max_retries = 3
+        return state
+
+    def _make_client(self, reply: str) -> MagicMock:
+        client = MagicMock()
+        msg = MagicMock()
+        msg.content = reply
+        choice = MagicMock()
+        choice.message = msg
+        resp = MagicMock()
+        resp.choices = [choice]
+        client.chat.completions.create.return_value = resp
+        return client
+
+    def test_no_invariants_skips_validation(self, capsys):
+        """With no invariants, validation is never called and response is shown."""
+        from chatbot.main import _handle_plan_dialog_message
+
+        state = self._make_state(invariants=[])
+        client = self._make_client("Plain response with no special blocks.")
+
+        with patch("chatbot.main.validate_draft_against_invariants") as mock_validate:
+            _handle_plan_dialog_message("Hello", state, client)
+
+        mock_validate.assert_not_called()
+        assert len(state.messages) == 2  # user + assistant
+
+    def test_invariant_passes_response_appended(self, capsys):
+        """If validation passes, assistant message is added and response printed."""
+        from chatbot.main import _handle_plan_dialog_message
+
+        state = self._make_state(invariants=["be polite"])
+        client = self._make_client("Of course, here is the plan.")
+
+        with patch("chatbot.main.validate_draft_against_invariants", return_value=(True, "")):
+            _handle_plan_dialog_message("Make a plan", state, client)
+
+        assert len(state.messages) == 2  # user + assistant
+        out = capsys.readouterr().out
+        assert "Of course, here is the plan." in out
+
+    def test_invariant_fails_all_retries_rejects(self, capsys):
+        """If all retries fail, user message is removed and function returns early."""
+        from chatbot.main import _handle_plan_dialog_message
+
+        state = self._make_state(invariants=["no databases"])
+        state.agent_mode.max_retries = 2
+        client = self._make_client("Let's use PostgreSQL for storage.")
+
+        with patch("chatbot.main.validate_draft_against_invariants",
+                   return_value=(False, "uses database")):
+            _handle_plan_dialog_message("Build a system with DB", state, client)
+
+        # User message should be removed on failure
+        assert len(state.messages) == 0
+        out = capsys.readouterr().out
+        assert "инвариант не пройден" in out
+        assert "отклонён" in out.lower() or "Запрос отклонён" in out
+
+    def test_invariant_fails_then_passes_on_retry(self, capsys):
+        """Fails first, passes on retry — assistant message is appended."""
+        from chatbot.main import _handle_plan_dialog_message
+
+        state = self._make_state(invariants=["no databases"])
+        # First call fails, retry passes
+        validate_side_effects = [(False, "uses database"), (True, "")]
+        client = self._make_client("Revised: use file storage instead.")
+
+        with patch("chatbot.main.validate_draft_against_invariants",
+                   side_effect=validate_side_effects):
+            _handle_plan_dialog_message("Build a system", state, client)
+
+        assert len(state.messages) == 2  # user + assistant
+        out = capsys.readouterr().out
+        assert "Revised: use file storage instead." in out
+
+    def test_invariant_fails_no_state_transition_to_confirming(self, capsys):
+        """On failure, plan_dialog_state must NOT change to 'confirming'."""
+        from chatbot.main import _handle_plan_dialog_message
+
+        state = self._make_state(invariants=["no databases"])
+        state.agent_mode.max_retries = 1
+        draft_with_plan = (
+            "**Response:**\nHere is my plan.\n\n"
+            '**Draft Plan:**\n[{"title": "Step 1", "description": "Use DB"}]\n'
+        )
+        client = self._make_client(draft_with_plan)
+
+        with patch("chatbot.main.validate_draft_against_invariants",
+                   return_value=(False, "uses database")):
+            _handle_plan_dialog_message("Plan with DB", state, client)
+
+        # Must stay active, not transition to confirming
+        assert state.plan_dialog_state == "active"
+        assert state.plan_draft_steps == []
+
+    def test_retry_messages_include_violation_info(self):
+        """Retry call includes the violation reason in user message."""
+        from chatbot.main import _handle_plan_dialog_message
+
+        state = self._make_state(invariants=["no SQL"])
+        state.agent_mode.max_retries = 1
+
+        call_messages = []
+
+        def fake_create(**kwargs):
+            call_messages.append(kwargs.get("messages", []))
+            msg = MagicMock()
+            msg.content = "Fixed response."
+            choice = MagicMock()
+            choice.message = msg
+            resp = MagicMock()
+            resp.choices = [choice]
+            return resp
+
+        client = MagicMock()
+        client.chat.completions.create.side_effect = fake_create
+
+        validate_side_effects = [(False, "contains SQL query"), (True, "")]
+
+        with patch("chatbot.main.validate_draft_against_invariants",
+                   side_effect=validate_side_effects):
+            _handle_plan_dialog_message("Do something", state, client)
+
+        # Second call (retry) should mention the violation
+        retry_msgs = call_messages[1]
+        last_user = next(m for m in reversed(retry_msgs) if m["role"] == "user")
+        assert "contains SQL query" in last_user["content"]

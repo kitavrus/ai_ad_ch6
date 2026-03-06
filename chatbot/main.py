@@ -29,6 +29,7 @@ from chatbot.context import (
     create_branch,
     create_checkpoint,
     extract_facts_from_llm,
+    extract_result_files,
     generate_clarification_question,
     maybe_summarize,
     parse_agent_output,
@@ -67,11 +68,14 @@ from chatbot.models import (
 from chatbot.storage import load_last_session, log_request_metric, save_session
 from chatbot.task_storage import (
     delete_task_plan,
+    get_task_result_dir,
     list_task_plans,
+    list_task_result_files,
     load_all_steps,
     load_task_plan,
     load_task_step,
     save_task_plan,
+    save_task_result_file,
     save_task_step,
 )
 
@@ -624,7 +628,9 @@ def _execute_builder_step(
         print(f"\n[Builder: выполняю шаг {step.index}. {step.title}...]")
         draft = _call_llm_for_builder_step(step, plan, state, client)
 
-        if invariants:
+        if not draft:
+            passed, violation = False, "пустой ответ от LLM"
+        elif invariants:
             passed, violation = validate_draft_against_invariants(
                 client, state.model, draft, invariants
             )
@@ -650,14 +656,7 @@ def _execute_builder_step(
         )
 
         if retry_count < _BUILDER_RETRIES_BEFORE_QUESTION:
-            # Добавляем нарушение как clarification для следующей попытки
-            plan.clarifications.append({
-                "question": f"Fix invariant violation: {violation}",
-                "answer": "Please correct the response to comply with all invariants.",
-            })
-            plan.updated_at = _now_str()
-            save_task_plan(plan, state.profile_name)
-            continue
+            continue  # инварианты уже в системном промпте, retry без фейковых записей
 
         # 3 fail → спрашиваем пользователя
         if clarif_rounds >= _BUILDER_MAX_CLARIFICATION_ROUNDS:
@@ -684,8 +683,14 @@ def _execute_builder_step(
 def _run_plan_builder(state: SessionState, client: OpenAI) -> None:
     """Автоматически исполняет все pending-шаги активного TaskPlan."""
     if not state.active_task_id:
-        print("[Plan builder: нет активной задачи. Используйте /task new или /task load]")
-        return
+        all_plans = list_task_plans(state.profile_name)
+        unfinished = [p for p in all_plans if p["phase"] not in ("done", "failed")]
+        if not unfinished:
+            print("[Plan builder: нет активной задачи. Используйте /task new или /task load]")
+            return
+        latest = max(unfinished, key=lambda p: p.get("updated_at") or p.get("created_at") or "")
+        state.active_task_id = latest["task_id"]
+        print(f"[Plan builder: загружена задача '{latest['name']}']")
 
     plan = load_task_plan(state.active_task_id, state.profile_name)
     if not plan:
@@ -700,11 +705,15 @@ def _run_plan_builder(state: SessionState, client: OpenAI) -> None:
         return
 
     print(f"\n[Plan builder: запуск — {len(pending)} шагов к исполнению]")
-    for step in pending:
-        success = _execute_builder_step(step, plan, state, client)
-        if not success:
-            print(f"[Plan builder: остановлен на шаге {step.index}]")
-            return
+    try:
+        for step in pending:
+            success = _execute_builder_step(step, plan, state, client)
+            if not success:
+                print(f"[Plan builder: остановлен на шаге {step.index}]")
+                return
+    except KeyboardInterrupt:
+        print(f"\n[Plan builder: прерван на шаге {step.index}. Прогресс сохранён. Продолжите через /plan builder]")
+        return
 
     # Проверяем финальный статус
     all_steps = load_all_steps(plan.task_id, state.profile_name)
@@ -761,6 +770,7 @@ def _kick_off_plan_dialog(state: SessionState, client: OpenAI, description: str 
         return
     display, _ = parse_agent_output(text)
     print(display)
+    state.messages.append(ChatMessage(role="user", content=user_content))
     state.messages.append(ChatMessage(role="assistant", content=text))
 
 
@@ -783,6 +793,45 @@ def _handle_plan_dialog_message(user_input: str, state: SessionState, client: Op
     except Exception as exc:
         print(f"API error: {exc}")
         return
+
+    # Validate against invariants with retry loop
+    if state.agent_mode.invariants:
+        draft = text
+        passed, violation = validate_draft_against_invariants(
+            client, state.model, draft, state.agent_mode.invariants
+        )
+        retry_count = 0
+        while not passed and retry_count < state.agent_mode.max_retries:
+            retry_count += 1
+            print(f"[Plan: инвариант нарушен ({violation}). Повтор {retry_count}/{state.agent_mode.max_retries}...]")
+            retry_messages = [
+                *api_msgs,
+                {"role": "assistant", "content": draft},
+                {"role": "user", "content": (
+                    f"Твой ответ нарушает инвариант: {violation}. "
+                    "Скорректируй ответ с учётом всех инвариантов."
+                )},
+            ]
+            try:
+                retry_resp = client.chat.completions.create(
+                    model=state.model, messages=retry_messages,
+                    max_tokens=state.max_tokens, temperature=state.temperature,
+                )
+                draft = (retry_resp.choices[0].message.content or "").strip()
+            except Exception as exc:
+                logger.warning("Plan dialog retry error: %s", exc)
+                break
+            passed, violation = validate_draft_against_invariants(
+                client, state.model, draft, state.agent_mode.invariants
+            )
+
+        if not passed:
+            state.messages.pop()
+            print(f"[Plan: инвариант не пройден — {violation}]")
+            print("[Запрос отклонён. Уточните задачу с учётом инвариантов:]")
+            return
+
+        text = draft
 
     state.messages.append(ChatMessage(role="assistant", content=text))
     display, _ = parse_agent_output(text)

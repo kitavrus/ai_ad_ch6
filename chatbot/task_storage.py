@@ -31,6 +31,48 @@ def get_task_dir(task_id: str, profile_name: str = DEFAULT_PROFILE) -> str:
 
 
 # ===========================================================================
+# ФАЙЛЫ РЕЗУЛЬТАТА ЗАДАЧИ
+# ===========================================================================
+
+
+def get_task_result_dir(task_id: str, profile_name: str = DEFAULT_PROFILE) -> str:
+    return os.path.join(get_task_dir(task_id, profile_name), "result")
+
+
+def save_task_result_file(
+    task_id: str,
+    relative_path: str,
+    content: str,
+    profile_name: str = DEFAULT_PROFILE,
+) -> str:
+    """Сохраняет файл результата в папку result/ задачи.
+
+    Returns:
+        Абсолютный путь к сохранённому файлу.
+    """
+    result_dir = get_task_result_dir(task_id, profile_name)
+    abs_path = os.path.join(result_dir, relative_path)
+    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+    with open(abs_path, "w", encoding="utf-8") as f:
+        f.write(content)
+    return abs_path
+
+
+def list_task_result_files(task_id: str, profile_name: str = DEFAULT_PROFILE) -> List[str]:
+    """Возвращает список относительных путей файлов в папке result/."""
+    result_dir = get_task_result_dir(task_id, profile_name)
+    if not os.path.isdir(result_dir):
+        return []
+    files = []
+    for root, _, filenames in os.walk(result_dir):
+        for fname in filenames:
+            abs_path = os.path.join(root, fname)
+            rel_path = os.path.relpath(abs_path, result_dir)
+            files.append(rel_path)
+    return sorted(files)
+
+
+# ===========================================================================
 # ПЛАН ЗАДАЧИ
 # ===========================================================================
 

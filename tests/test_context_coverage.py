@@ -232,7 +232,7 @@ class TestBuildContextBranching:
 # ---------------------------------------------------------------------------
 
 class TestValidateDraftFallback:
-    def test_ambiguous_response_returns_pass(self):
+    def test_ambiguous_response_returns_fail(self):
         client = MagicMock()
         client.chat.completions.create.return_value = MagicMock(
             choices=[MagicMock(message=MagicMock(content="MAYBE this is ok"))]
@@ -240,8 +240,8 @@ class TestValidateDraftFallback:
         passed, reason = validate_draft_against_invariants(
             client, "m", "draft text", "some invariant"
         )
-        assert passed is True
-        assert reason == ""
+        assert passed is False
+        assert "inconclusive" in reason
 
 
 # ---------------------------------------------------------------------------

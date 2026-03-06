@@ -1,0 +1,13 @@
+{
+  "step_id": "ad4d8690da2e423d94090aee3bccac8c_step_001",
+  "task_id": "ad4d8690da2e423d94090aee3bccac8c",
+  "index": 1,
+  "title": "Define data model",
+  "description": "Specify the fields for each expense record (e.g., id, date, amount, category, comment, tags). Use dataclasses for type safety and easy conversion to/from dict.",
+  "status": "done",
+  "notes": "",
+  "result": "```python\nfrom dataclasses import dataclass, field, asdict\nfrom typing import List, Dict, Any\nfrom datetime import date\nimport json\nimport uuid\n\n@dataclass\nclass Expense:\n    \"\"\"\n    Data model for an expense record.\n    \"\"\"\n    id: str = field(default_factory=lambda: str(uuid.uuid4()))\n    date: date\n    amount: float\n    category: str\n    comment: str = \"\"\n    tags: List[str] = field(default_factory=list)\n\n    def to_dict(self) -> Dict[str, Any]:\n        \"\"\"Convert the Expense instance to a JSON‑serializable dictionary.\"\"\"\n        data = asdict(self)\n        # Serialize date to ISO format string\n        data[\"date\"] = self.date.isoformat()\n        return data\n\n    @classmethod\n    def from_dict(cls, data: Dict[str, Any]) -> \"Expense\":\n        \"\"\"Create an Expense instance from a dictionary (e.g., loaded from JSON).\"\"\"\n        # Parse date string back to date object\n        if isinstance(data.get(\"date\"), str):\n            data[\"date\"] = date.fromisoformat(data[\"date\"])\n        return cls(**data)\n\n    def save_to_json(self, filepath: str) -> None:\n        \"\"\"Append this expense record to a JSON file (one record per line).\"\"\"\n        with open(filepath, \"a\", encoding=\"utf-8\") as f:\n            json.dump(self.to_dict(), f, ensure_ascii=False)\n            f.write(\"\\n\")\n\n    @staticmethod\n    def load_all_from_json(filepath: str) -> List[\"Expense\"]:\n        \"\"\"Load all expense records from a JSON file.\"\"\"\n        expenses = []\n        try:\n            with open(filepath, \"r\", encoding=\"utf-8\") as f:\n                for line in f:\n                    if line.strip():\n                        data = json.loads(line)\n                        expenses.append(Expense.from_dict(data))\n        except FileNotFoundError:\n            pass  # No file yet, return empty list\n        return expenses\n```",
+  "created_at": "2026-03-06T09:25:01.337378",
+  "started_at": null,
+  "completed_at": "2026-03-06T09:25:26.856521"
+}

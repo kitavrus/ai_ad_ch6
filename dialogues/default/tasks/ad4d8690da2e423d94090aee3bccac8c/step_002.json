@@ -1,0 +1,13 @@
+{
+  "step_id": "ad4d8690da2e423d94090aee3bccac8c_step_002",
+  "task_id": "ad4d8690da2e423d94090aee3bccac8c",
+  "index": 2,
+  "title": "Design JSON file structure",
+  "description": "Create a single JSON file (e.g., expenses.json) that stores a list of expense objects. Include a top‑level metadata section for next_id and optional indexes.",
+  "status": "done",
+  "notes": "",
+  "result": "```json\n{\n  \"metadata\": {\n    \"next_id\": 1,\n    \"indexes\": {\n      \"category\": {},\n      \"date\": {}\n    }\n  },\n  \"expenses\": [\n    {\n      \"id\": 1,\n      \"date\": \"2023-09-01\",\n      \"category\": \"Travel\",\n      \"amount\": 150.0,\n      \"currency\": \"USD\",\n      \"description\": \"Flight to NYC\"\n    }\n  ]\n}\n```\n\n**Explanation**\n\n- `metadata` holds global information:\n  - `next_id` is the identifier to assign to the next expense entry.\n  - `indexes` is an optional section where you can store pre‑computed lookup tables (e.g., mapping categories or dates to expense IDs) to speed up queries without using a database.\n- `expenses` is an array of expense objects. Each expense contains:\n  - `id`: unique identifier (auto‑incremented via `next_id`).\n  - `date`: ISO‑8601 date string.\n  - `category`: expense category (e.g., “Travel”, “Meals”).\n  - `amount`: numeric value of the expense.\n  - `currency`: three‑letter ISO currency code.\n  - `description`: optional human‑readable note.\n\nThis structure satisfies the invariants: it uses only JSON (no external packages) and stores all data in a single JSON file.",
+  "created_at": "2026-03-06T09:25:01.337378",
+  "started_at": null,
+  "completed_at": "2026-03-06T09:25:29.757796"
+}

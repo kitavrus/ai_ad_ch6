@@ -490,7 +490,9 @@ def validate_draft_against_invariants(
         f"Invariants:\n{inv_text}\n\n"
         f"Response to validate:\n{draft}\n\n"
         "Does this response violate any of the above invariants?\n"
-        'Answer ONLY: "PASS" or "FAIL: <reason>"'
+        'Answer ONLY:\n'
+        '"PASS" — if no invariants are violated, or\n'
+        '"FAIL: Invariant N (short invariant text): reason" — if invariant N is violated.'
     )
     try:
         response = client.chat.completions.create(
@@ -500,15 +502,16 @@ def validate_draft_against_invariants(
             temperature=0.0,
         )
         result = (response.choices[0].message.content or "").strip()
-        if result.upper().startswith("PASS"):
+        clean = result.strip('"\'')
+        if re.match(r'PASS\b', clean, re.IGNORECASE):
             return True, ""
-        if result.upper().startswith("FAIL"):
-            reason = result[result.find(":") + 1:].strip() if ":" in result else result
+        if re.match(r'FAIL\b', clean, re.IGNORECASE):
+            reason = clean[clean.find(":") + 1:].strip() if ":" in clean else clean
             return False, reason
-        return True, ""
+        return False, f"validation inconclusive: {result!r}"
     except Exception as exc:
         logger.warning("Agent validation error: %s", exc)
-        return True, ""
+        return False, f"validation error: {exc}"
 
 
 def parse_agent_output(text: str) -> Tuple[str, Dict[str, str]]:
@@ -651,6 +654,15 @@ You are an advanced Stateful AI Agent executing a plan step-by-step.
 2. **GENERATE DRAFT**: Execute the step — produce a concrete result.
 3. **VALIDATE**: Ensure the result satisfies all Invariants.
 4. **OUTPUT FORMAT** — you MUST output the following labelled blocks:
+5. **OUTPUT FILES** — when step result involves creating files (code, configs, data):
+   Format each file as:
+
+   ### FILE: relative/path/to/filename.ext
+   ```language
+   <file content>
+   ```
+
+   Paths are relative to the task result directory. Nested directories are allowed.
 
 **Response:**
 [Execution result for this step]
@@ -658,6 +670,12 @@ You are an advanced Stateful AI Agent executing a plan step-by-step.
 **State Update:**
 [key: value updates, or (none)]
 """
+
+
+def extract_result_files(text: str) -> List[Tuple[str, str]]:
+    """Извлекает файлы из вывода LLM в формате ### FILE: path\\n```\\ncontent\\n```."""
+    pattern = r'###\s+FILE:\s+(\S+)\n```[^\n]*\n([\s\S]*?)```'
+    return [(m.group(1).strip(), m.group(2)) for m in re.finditer(pattern, text)]
 
 
 def build_builder_step_prompt(
