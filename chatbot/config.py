@@ -11,29 +11,30 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 
 # ---------------------------------------------------------------------------
-# Глобальные константы
+# Глобальные константы (загружаются из .env)
 # ---------------------------------------------------------------------------
 
-BASE_URL: str = "https://routerai.ru/api/v1"
+BASE_URL: str = os.getenv("BASE_URL", "https://routerai.ru/api/v1")
 API_KEY: Optional[str] = os.getenv("API_KEY")
 
-DEFAULT_MODEL: str = "inception/mercury-coder"
-DEFAULT_MAX_TOKENS: Optional[int] = None
-DEFAULT_TEMPERATURE: float = 0.7
-DEFAULT_TOP_P: float = 0.9
-DEFAULT_TOP_K: int = 50
+DEFAULT_MODEL: str = os.getenv("DEFAULT_MODEL", "inception/mercury-coder")
+_max_tokens_env = os.getenv("DEFAULT_MAX_TOKENS", "")
+DEFAULT_MAX_TOKENS: Optional[int] = int(_max_tokens_env) if _max_tokens_env else None
+DEFAULT_TEMPERATURE: float = float(os.getenv("DEFAULT_TEMPERATURE", "0.7"))
+DEFAULT_TOP_P: float = float(os.getenv("DEFAULT_TOP_P", "0.9"))
+DEFAULT_TOP_K: int = int(os.getenv("DEFAULT_TOP_K", "50"))
 
 # Стоимость токенов
-USD_PER_1K_TOKENS: float = 0.0015
-RUB_PER_USD: float = 100.0
+USD_PER_1K_TOKENS: float = float(os.getenv("USD_PER_1K_TOKENS", "0.0015"))
+RUB_PER_USD: float = float(os.getenv("RUB_PER_USD", "100.0"))
 
 # Управление контекстом
-CONTEXT_RECENT_MESSAGES: int = 10  # сколько последних сообщений держим «как есть»
-CONTEXT_SUMMARY_INTERVAL: int = 10  # каждые N сообщений делаем summary старых
+CONTEXT_RECENT_MESSAGES: int = int(os.getenv("CONTEXT_RECENT_MESSAGES", "10"))
+CONTEXT_SUMMARY_INTERVAL: int = int(os.getenv("CONTEXT_SUMMARY_INTERVAL", "10"))
 
 # Директория для сохранения сессий
-DIALOGUES_DIR: str = "dialogues"
-DEFAULT_PROFILE: str = "default"
+DIALOGUES_DIR: str = os.getenv("DIALOGUES_DIR", "dialogues")
+DEFAULT_PROFILE: str = os.getenv("DEFAULT_PROFILE", "default")
 
 
 # ---------------------------------------------------------------------------

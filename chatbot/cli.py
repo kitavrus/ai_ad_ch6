@@ -164,6 +164,21 @@ def parse_inline_command(line: str) -> dict:
         _arg = _parts[1].strip() if len(_parts) > 1 else ""
         return {"plan": {"action": _sub, "arg": _arg}}
 
+    # Специальная обработка /mem (aliases для /settask, /setpref, /remember)
+    if _first_word == "mem":
+        _rest = payload[len("mem"):].strip()
+        _parts = _rest.split(None, 1)
+        _sub = _parts[0].lower() if _parts else ""
+        _arg = _parts[1].strip() if len(_parts) > 1 else ""
+        if _sub == "task":
+            return {"settask": _arg} if _arg else {}
+        elif _sub == "pref":
+            return {"setpref": _arg} if _arg else {}
+        elif _sub == "know":
+            return {"remember": _arg} if _arg else {}
+        # Для остальных /mem* команд — пропускаем, они разберутся ниже через key-нормализацию
+        return {}
+
     # Специальная обработка /invariant
     if _first_word == "invariant":
         _rest = payload[len("invariant"):].strip()
@@ -184,8 +199,12 @@ def parse_inline_command(line: str) -> dict:
     if _first_word == "task":
         _rest = payload[len("task"):].strip()
         _parts = _rest.split(None, 1)
-        return {"task": {"action": _parts[0].lower() if _parts else "show",
-                         "arg": _parts[1].strip() if len(_parts) > 1 else ""}}
+        _task_action = _parts[0].lower() if _parts else "show"
+        _task_arg = _parts[1].strip() if len(_parts) > 1 else ""
+        # /task execute → alias для /plan builder
+        if _task_action == "execute":
+            return {"plan": {"action": "builder", "arg": _task_arg}}
+        return {"task": {"action": _task_action, "arg": _task_arg}}
 
     # Специальная обработка /project
     if _first_word == "project":
@@ -193,7 +212,27 @@ def parse_inline_command(line: str) -> dict:
         _parts = _rest.split(None, 1)
         _sub = _parts[0].lower() if _parts else "show"
         _arg = _parts[1].strip() if len(_parts) > 1 else ""
-        return {"project": {"action": _sub, "arg": _arg}}
+        # Нормализация aliases: /project plans → tasks; /project plan * → task_*
+        if _sub == "plans":
+            return {"project": {"action": "tasks", "arg": _arg}}
+        if _sub == "plan":
+            _plan_parts = _arg.split(None, 1)
+            _plan_sub = _plan_parts[0].lower() if _plan_parts else ""
+            _plan_arg = _plan_parts[1].strip() if len(_plan_parts) > 1 else ""
+            _alias_map = {"new": "task_new", "rename": "task_rename", "describe": "task_describe"}
+            if _plan_sub in _alias_map:
+                return {"project": {"action": _alias_map[_plan_sub], "arg": _plan_arg}}
+            return {"project": {"action": f"plan_{_plan_sub}" if _plan_sub else "show", "arg": _plan_arg}}
+        # /project task new|rename|describe → нормализуем в task_new|task_rename|task_describe
+        if _sub == "task":
+            _task_parts = _arg.split(None, 1)
+            _task_sub = _task_parts[0].lower() if _task_parts else ""
+            _task_arg = _task_parts[1].strip() if len(_task_parts) > 1 else ""
+            _alias_map2 = {"new": "task_new", "rename": "task_rename", "describe": "task_describe"}
+            if _task_sub in _alias_map2:
+                return {"project": {"action": _alias_map2[_task_sub], "arg": _task_arg}}
+        # Нормализуем дефисы в action для единообразия с другими подкомандами
+        return {"project": {"action": _sub.replace("-", "_"), "arg": _arg}}
 
     # Разбиваем на ключ и значение
     if "=" in payload:
@@ -247,17 +286,20 @@ def parse_inline_command(line: str) -> dict:
     # --- Переключатель стратегий ---
     elif key == "strategy":
         val = value.lower().strip()
-        # Допускаем короткие псевдонимы: sw, sf, br
-        _aliases = {
-            "sw": ContextStrategy.SLIDING_WINDOW.value,
-            "sf": ContextStrategy.STICKY_FACTS.value,
-            "br": ContextStrategy.BRANCHING.value,
-        }
-        val = _aliases.get(val, val)
-        if val in _STRATEGY_VALUES:
-            updates["strategy"] = val
+        if val == "status":
+            updates["strategy_status"] = True
         else:
-            logger.warning("Неизвестная стратегия: %s. Доступны: %s", val, _STRATEGY_VALUES)
+            # Допускаем короткие псевдонимы: sw, sf, br
+            _aliases = {
+                "sw": ContextStrategy.SLIDING_WINDOW.value,
+                "sf": ContextStrategy.STICKY_FACTS.value,
+                "br": ContextStrategy.BRANCHING.value,
+            }
+            val = _aliases.get(val, val)
+            if val in _STRATEGY_VALUES:
+                updates["strategy"] = val
+            else:
+                logger.warning("Неизвестная стратегия: %s. Доступны: %s", val, _STRATEGY_VALUES)
 
     # --- Sticky Facts ---
     elif key == "showfacts":
@@ -324,6 +366,7 @@ def parse_inline_command(line: str) -> dict:
         #   /profile format <k>=<v>        — формат вывода
         #   /profile constraint add <text> — добавить ограничение
         #   /profile constraint del <text> — удалить ограничение
+        #   /profile model <name>          — задать предпочтительную модель
         #   /profile load <name>           — загрузить профиль по имени
         sub_parts = value.strip().split(None, 1)
         sub_cmd = sub_parts[0].lower() if sub_parts else "show"

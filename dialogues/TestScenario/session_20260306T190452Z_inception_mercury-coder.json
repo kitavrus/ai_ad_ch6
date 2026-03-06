@@ -1,0 +1,77 @@
+{
+  "dialogue_session_id": "dialogues/TestScenario/session_20260306T190452Z_inception_mercury-coder.json",
+  "created_at": "2026-03-06T19:05:34Z",
+  "model": "inception/mercury-coder",
+  "base_url": "https://routerai.ru/api/v1",
+  "system_prompt": null,
+  "initial_prompt": null,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Задача: Написать план разработки REST API на Python\n\nНачинаем планирование.",
+      "tokens": null
+    },
+    {
+      "role": "assistant",
+      "content": "**Response:**\n\nПривет! Чтобы составить точный и полезный план разработки REST API на Python, мне нужно уточнить несколько деталей:\n\n1. **Фреймворк** – какой фреймворк вы планируете использовать (FastAPI, Flask, Django REST Framework и т.д.)?\n2. **База данных** – какие СУБД будут задействованы (PostgreSQL, MySQL, SQLite, NoSQL и т.д.) и нужен ли ORM (SQLAlchemy, Tortoise‑ORM, Django ORM)?\n3. **Аутентификация и авторизация** – требуется ли JWT, OAuth2, Basic Auth, интеграция с внешними провайдерами?\n4. **Тестирование** – какие типы тестов планируется писать (юнит, интеграционные, e2e) и с помощью каких инструментов (pytest, unittest, httpx и т.д.)?\n5. **CI/CD** – какие инструменты CI/CD вы будете использовать (GitHub Actions, GitLab CI, Jenkins, etc.) и какие шаги должны быть включены?\n6. **Документация** – нужна ли автоматическая документация (OpenAPI/Swagger, ReDoc) и какие требования к ней?\n7. **Развёртывание** – где планируется хостинг (Docker, Kubernetes, облако, VPS) и какие настройки окружения нужны?\n\nПожалуйста, уточните эти пункты, чтобы я мог подготовить конкретный план с конкретными сроками для каждого этапа.",
+      "tokens": null
+    },
+    {
+      "role": "user",
+      "content": "Задача: Написать план разработки REST API на Python\n\nНачинаем планирование.",
+      "tokens": null
+    },
+    {
+      "role": "assistant",
+      "content": "**Response:**\n\nПривет! Чтобы составить конкретный план разработки REST API на Python, мне нужно уточнить несколько деталей:\n\n1. **Фреймворк** – какой фреймворк вы планируете использовать (FastAPI, Flask, Django Rest Framework и т.д.)?\n2. **Функциональность** – какие основные эндпоинты и операции (CRUD, аутентификация, поиск и т.д.) должны быть реализованы?\n3. **Хранилище данных** – какая СУБД будет использоваться (PostgreSQL, MySQL, SQLite, NoSQL и т.д.) и нужны ли миграции?\n4. **Аутентификация и авторизация** – планируется ли JWT, OAuth2, Basic Auth или что-то ещё?\n5. **Тестирование** – нужны ли unit‑тесты, интеграционные тесты, тесты с Postman?\n6. **Документация** – будет ли автоматически генерируемая документация (OpenAPI/Swagger) или нужна отдельная?\n7. **Развертывание** – где и как будет развернуто приложение (Docker, Kubernetes, облако, VPS и т.д.)?\n8. **Сроки** – есть ли конкретные даты начала и завершения проекта, или вы хотите, чтобы я предложил примерный график?\n\nПожалуйста, ответьте на эти вопросы, чтобы я мог подготовить подробный, пронумерованный план с конкретными сроками для каждого этапа.",
+      "tokens": null
+    },
+    {
+      "role": "user",
+      "content": "FastAPI + PostgreSQL + JWT. CI/CD через GitHub Actions. Разворачивать в Docker. Покрытие тестами 80%.",
+      "tokens": null
+    },
+    {
+      "role": "assistant",
+      "content": "**Response:**\n\nНиже приведён план разработки REST API на FastAPI с PostgreSQL и JWT, CI/CD через GitHub Actions и Docker‑развёртывание. В каждом пункте указаны конкретные сроки (дата начала и окончания этапа). Пожалуйста, подтвердите, подходит ли вам такой график, или сообщите, если нужно изменить даты или добавить/удалить шаги.\n\n1. **Project Setup** – Создание репозитория, настройка виртуального окружения, Dockerfile, .gitignore, начальный README.  \n   *Начало:* 2026‑03‑01 – *Завершение:* 2026‑03‑02\n\n2. **Database Schema & Migrations** – Проектирование схемы PostgreSQL, настройка Alembic (или другого миграционного инструмента) и написание миграций.  \n   *Начало:* 2026‑03‑03 – *Завершение:* 2026‑03‑06\n\n3. **Core CRUD Endpoints & JWT Auth** – Реализация основных CRUD‑операций, настройка OAuth2 / JWT аутентификации, защита роутов.  \n   *Начало:* 2026‑03‑07 – *Завершение:* 2026‑03‑13\n\n4. **Testing & Coverage** – Написание unit‑тестов и интеграционных тестов с использованием pytest и httpx, достижение покрытия 80 %.  \n   *Начало:* 2026‑03‑14 – *Завершение:* 2026‑03‑17\n\n5. **CI/CD Pipeline (GitHub Actions)** – Настройка workflow для lint‑проверки, тестирования, сборки Docker‑образа и публикации в Docker Hub (или GitHub Container Registry).  \n   *Начало:* 2026‑03‑18 – *Завершение:* 2026‑03‑19\n\n6. **Dockerization & Local Deployment** – Создание Docker‑compose файла, запуск локального окружения и проверка работоспособности API.  \n   *Начало:* 2026‑03‑20 – *Завершение:* 2026‑03‑20\n\n7. **Final Review & Documentation** – Проверка всех требований, написание пользовательской документации (OpenAPI/Swagger), подготовка к релизу.  \n   *Начало:* 2026‑03‑21 – *Завершение:* 2026‑03‑21\n\n**Draft Plan:**\n```json\n[\n  {\n    \"title\": \"Project Setup\",\n    \"description\": \"Создание репозитория, настройка виртуального окружения, Dockerfile, .gitignore, начальный README.\",\n    \"start_date\": \"2026-03-01\",\n    \"end_date\": \"2026-03-02\"\n  },\n  {\n    \"title\": \"Database Schema & Migrations\",\n    \"description\": \"Проектирование схемы PostgreSQL, настройка Alembic (или другого миграционного инструмента) и написание миграций.\",\n    \"start_date\": \"2026-03-03\",\n    \"end_date\": \"2026-03-06\"\n  },\n  {\n    \"title\": \"Core CRUD Endpoints & JWT Auth\",\n    \"description\": \"Реализация основных CRUD‑операций, настройка OAuth2 / JWT аутентификации, защита роутов.\",\n    \"start_date\": \"2026-03-07\",\n    \"end_date\": \"2026-03-13\"\n  },\n  {\n    \"title\": \"Testing & Coverage\",\n    \"description\": \"Написание unit‑тестов и интеграционных тестов с использованием pytest и httpx, достижение покрытия 80 %.\",\n    \"start_date\": \"2026-03-14\",\n    \"end_date\": \"2026-03-17\"\n  },\n  {\n    \"title\": \"CI/CD Pipeline (GitHub Actions)\",\n    \"description\": \"Настройка workflow для lint‑проверки, тестирования, сборки Docker‑образа и публикации в Docker Hub (или GitHub Container Registry).\",\n    \"start_date\": \"2026-03-18\",\n    \"end_date\": \"2026-03-19\"\n  },\n  {\n    \"title\": \"Dockerization & Local Deployment\",\n    \"description\": \"Создание Docker‑compose файла, запуск локального окружения и проверка работоспособности API.\",\n    \"start_date\": \"2026-03-20\",\n    \"end_date\": \"2026-03-20\"\n  },\n  {\n    \"title\": \"Final Review & Documentation\",\n    \"description\": \"Проверка всех требований, написание пользовательской документации (OpenAPI/Swagger), подготовка к релизу.\",\n    \"start_date\": \"2026-03-21\",\n    \"end_date\": \"2026-03-21\"\n  }\n]\n```",
+      "tokens": null
+    },
+    {
+      "role": "user",
+      "content": "Покажи итоговый план",
+      "tokens": null
+    },
+    {
+      "role": "assistant",
+      "content": "**Response:**\n\nНиже приведён итоговый план разработки REST API на FastAPI с PostgreSQL и JWT, CI/CD через GitHub Actions и Docker‑развёртывание. Каждый пункт пронумерован и содержит конкретные сроки начала и окончания.\n\n**Draft Plan:**\n```json\n[\n  {\n    \"step\": 1,\n    \"title\": \"Project Setup\",\n    \"description\": \"Создание репозитория, настройка виртуального окружения, Dockerfile, .gitignore, начальный README.\",\n    \"start_date\": \"2026-03-01\",\n    \"end_date\": \"2026-03-02\"\n  },\n  {\n    \"step\": 2,\n    \"title\": \"Database Schema & Migrations\",\n    \"description\": \"Проектирование схемы PostgreSQL, настройка Alembic (или другого миграционного инструмента) и написание миграций.\",\n    \"start_date\": \"2026-03-03\",\n    \"end_date\": \"2026-03-06\"\n  },\n  {\n    \"step\": 3,\n    \"title\": \"Core CRUD Endpoints & JWT Auth\",\n    \"description\": \"Реализация основных CRUD‑операций, настройка OAuth2 / JWT аутентификации, защита роутов.\",\n    \"start_date\": \"2026-03-07\",\n    \"end_date\": \"2026-03-13\"\n  },\n  {\n    \"step\": 4,\n    \"title\": \"Testing & Coverage\",\n    \"description\": \"Написание unit‑тестов и интеграционных тестов с использованием pytest и httpx, достижение покрытия 80 %.\",\n    \"start_date\": \"2026-03-14\",\n    \"end_date\": \"2026-03-17\"\n  },\n  {\n    \"step\": 5,\n    \"title\": \"CI/CD Pipeline (GitHub Actions)\",\n    \"description\": \"Настройка workflow для lint‑проверки, тестирования, сборки Docker‑образа и публикации в Docker Hub (или GitHub Container Registry).\",\n    \"start_date\": \"2026-03-18\",\n    \"end_date\": \"2026-03-19\"\n  },\n  {\n    \"step\": 6,\n    \"title\": \"Dockerization & Local Deployment\",\n    \"description\": \"Создание Docker‑compose файла, запуск локального окружения и проверка работоспособности API.\",\n    \"start_date\": \"2026-03-20\",\n    \"end_date\": \"2026-03-20\"\n  },\n  {\n    \"step\": 7,\n    \"title\": \"Final Review & Documentation\",\n    \"description\": \"Проверка всех требований, написание пользовательской документации (OpenAPI/Swagger), подготовка к релизу.\",\n    \"start_date\": \"2026-03-21\",\n    \"end_date\": \"2026-03-21\"\n  }\n]\n```\n\nПожалуйста, подтвердите, подходит ли вам такой график, или сообщите, если нужны изменения.",
+      "tokens": null
+    }
+  ],
+  "context_summary": "",
+  "turns": 8,
+  "last_user_input": null,
+  "last_assistant_content": null,
+  "duration_seconds": 20.596288919448853,
+  "total_tokens": 0,
+  "total_prompt_tokens": 0,
+  "total_completion_tokens": 0,
+  "requests": [],
+  "context_strategy": "sliding_window",
+  "sticky_facts": {},
+  "branches": [],
+  "active_branch_id": null,
+  "active_task_id": null,
+  "active_task_ids": [],
+  "active_project_id": null,
+  "agent_mode": {
+    "enabled": true,
+    "invariants": [
+      "Ответ должен содержать конкретные сроки для каждого этапа",
+      "Все пункты плана должны быть пронумерованы",
+      "Ответ должен содержать конкретные сроки для каждого этапа",
+      "Все пункты плана должны быть пронумерованы"
+    ],
+    "max_retries": 3
+  },
+  "plan_dialog_state": "confirming"
+}

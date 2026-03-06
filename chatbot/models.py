@@ -211,6 +211,10 @@ class UserProfile(BaseModel):
         default_factory=dict,
         description="Произвольные дополнительные предпочтения",
     )
+    preferred_model: Optional[str] = Field(
+        default=None,
+        description="Предпочтительная модель для этого профиля",
+    )
     created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
 

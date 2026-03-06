@@ -227,19 +227,28 @@ def _print_loaded_history(messages: List[ChatMessage]) -> None:
 def _print_strategy_status(state: SessionState) -> None:
     """Выводит текущую стратегию и связанный статус."""
     strategy = state.context_strategy
+    total_msgs = len([m for m in state.messages if m.role != "system"])
     print(f"\n[Стратегия контекста: {strategy.value}]")
+    print(f"  Сообщений в истории: {total_msgs}")
     if strategy == ContextStrategy.SLIDING_WINDOW:
-        print(f"  Окно: последние N сообщений. Summary: {'есть' if state.context_summary else 'нет'}.")
+        from chatbot.config import CONTEXT_RECENT_MESSAGES, CONTEXT_SUMMARY_INTERVAL
+        print(f"  Окно (recent_n): {CONTEXT_RECENT_MESSAGES} | интервал суммаризации: {CONTEXT_SUMMARY_INTERVAL}")
+        print(f"  Summary: {'есть' if state.context_summary else 'нет'}")
+        if state.context_summary:
+            preview = state.context_summary[:120].replace("\n", " ")
+            print(f"  Превью: {preview}{'...' if len(state.context_summary) > 120 else ''}")
     elif strategy == ContextStrategy.STICKY_FACTS:
         count = len(state.sticky_facts.facts)
-        print(f"  Фактов в памяти: {count}.")
+        print(f"  Фактов в памяти: {count}")
         if count:
             for k, v in state.sticky_facts.facts.items():
                 print(f"    {k}: {v}")
     elif strategy == ContextStrategy.BRANCHING:
         branch_count = len(state.branches)
         active = state.active_branch_id or "нет"
-        print(f"  Веток: {branch_count}. Активная: {active}.")
+        print(f"  Веток: {branch_count} | Активная: {active}")
+        if state.last_checkpoint:
+            print(f"  Последний checkpoint: {state.last_checkpoint.created_at}")
     print()
 
 
@@ -1028,10 +1037,10 @@ def _handle_plan_awaiting_task(user_input: str, state: SessionState) -> None:
     """Обрабатывает ввод описания задачи в начале Plan-режима."""
     description = user_input.strip()
     if not description:
-        print("[Введите описание задачи:]")
+        print("[Введите описание задачи (или /plan cancel для отмены):]")
         return
     state.plan_draft_description = description
-    print("[Хотите добавить инварианты? (да/нет):]")
+    print("[Хотите добавить инварианты? (да/нет/готово | /plan cancel для отмены):]")
     state.plan_dialog_state = "awaiting_invariants"
 
 
@@ -1047,7 +1056,7 @@ def _handle_plan_awaiting_invariants(user_input: str, state: SessionState, clien
         print("[Добавляйте инварианты через `/invariant add <текст>`. Введите 'готово' когда закончите.]")
         # state остаётся "awaiting_invariants"
     else:
-        print("[Введите 'да' чтобы добавить инварианты, 'нет' чтобы пропустить, 'готово' когда добавили.]")
+        print("[Введите 'да' чтобы добавить инварианты, 'нет' чтобы пропустить, 'готово' когда добавили. /plan cancel для отмены.]")
 
 
 def _confirm_and_create_tasks(user_input: str, state: SessionState, client: OpenAI) -> None:
@@ -1093,7 +1102,7 @@ def _handle_agent_command(action: str, arg: str, state: SessionState, client: Op
                     print("  Ограничения: " + "; ".join(p.constraints))
                 if p.custom:
                     print("  Дополнения:  " + ", ".join(f"{k}={v}" for k, v in p.custom.items()))
-        print("[Введите описание задачи:]")
+        print("[Введите описание задачи (или /plan cancel для отмены):]")
     elif action in ("off", "disable"):
         state.agent_mode.enabled = False
         state.plan_dialog_state = None
@@ -1129,8 +1138,13 @@ def _handle_agent_command(action: str, arg: str, state: SessionState, client: Op
             _run_plan_builder(state, client)
     elif action == "result":
         _handle_task_command("result", arg, state, client)
+    elif action == "cancel":
+        state.plan_dialog_state = None
+        state.plan_draft_steps = []
+        state.plan_draft_description = ""
+        print("[Plan dialog: отменён. Состояние сброшено.]")
     else:
-        print(f"[Неизвестная подкоманда plan: {action!r}. Доступны: on, off, status, retries <n>, builder, result]")
+        print(f"[Неизвестная подкоманда plan: {action!r}. Доступны: on, off, status, retries <n>, builder, result, cancel]")
 
 
 def _handle_invariant_command(action: str, arg: str, state: SessionState) -> None:
@@ -1183,7 +1197,7 @@ def _handle_invariant_command(action: str, arg: str, state: SessionState) -> Non
         print(f"[Неизвестная подкоманда invariant: {action!r}. Доступны: add, del, edit, list, clear]")
 
 
-def _handle_project_command(action: str, arg: str, state: SessionState) -> None:
+def _handle_project_command(action: str, arg: str, state: SessionState, client: Optional[OpenAI] = None) -> None:
     """Диспетчер команды /project."""
     if action == "new":
         if not arg:
@@ -1250,7 +1264,7 @@ def _handle_project_command(action: str, arg: str, state: SessionState) -> None:
                     print(f"  [{plan.phase.value}] {plan.name}{model_tag}{active_tag}")
         print("---\n")
 
-    elif action == "add-plan":
+    elif action in ("add_plan", "add-plan"):
         if not arg:
             print("[/project add-plan требует ID задачи]")
             return
@@ -1273,8 +1287,112 @@ def _handle_project_command(action: str, arg: str, state: SessionState) -> None:
         save_task_plan(plan, state.profile_name)
         print(f"[План '{plan.name}' добавлен в проект '{project.name}']")
 
+    elif action == "add_plan_name":
+        # /project add-plan-name NAME — привязать задачу по имени
+        if not arg:
+            print("[/project add-plan-name требует имя задачи]")
+            return
+        if not state.active_project_id:
+            print("[Нет активного проекта. Выберите: /project switch <название>]")
+            return
+        task_id = find_plan_by_name(arg, state.profile_name)
+        if not task_id:
+            print(f"[Задача с именем '{arg}' не найдена]")
+            return
+        project = load_project(state.active_project_id, state.profile_name)
+        if not project:
+            print(f"[Проект не найден: {state.active_project_id}]")
+            return
+        plan = load_task_plan(task_id, state.profile_name)
+        if task_id not in project.plan_ids:
+            project.plan_ids.append(task_id)
+            project.updated_at = _now_iso()
+            save_project(project, state.profile_name)
+        if plan:
+            plan.project_id = project.project_id
+            save_task_plan(plan, state.profile_name)
+            print(f"[План '{plan.name}' добавлен в проект '{project.name}']")
+
+    elif action == "tasks":
+        # /project tasks — список задач в активном проекте
+        if not state.active_project_id:
+            print("[Нет активного проекта. Выберите: /project switch <название>]")
+            return
+        project = load_project(state.active_project_id, state.profile_name)
+        if not project:
+            print(f"[Проект не найден: {state.active_project_id}]")
+            return
+        if not project.plan_ids:
+            print(f"[Проект '{project.name}': задач нет. Создайте: /project task new <описание>]")
+            return
+        print(f"\n--- Задачи проекта: {project.name} ---")
+        for tid in project.plan_ids:
+            plan = load_task_plan(tid, state.profile_name)
+            if plan:
+                steps = load_all_steps(tid, state.profile_name)
+                done_steps = sum(1 for s in steps if s.status.value == "done")
+                active_tag = " ◀ активная" if tid == state.active_task_id else ""
+                print(f"  [{plan.phase.value}] {plan.name} ({done_steps}/{plan.total_steps} шагов){active_tag}")
+            else:
+                print(f"  [?] {tid[:8]} (не найдена)")
+        print("---\n")
+
+    elif action == "task_new":
+        # /project task new DESC или /project plan new DESC
+        if not arg:
+            print("[/project task new требует описание задачи]")
+            return
+        if not state.active_project_id:
+            print("[Нет активного проекта. Выберите: /project switch <название>]")
+            return
+        project = load_project(state.active_project_id, state.profile_name)
+        if not project:
+            print(f"[Проект не найден: {state.active_project_id}]")
+            return
+        _create_task_plan(arg, state, client)
+        if state.active_task_id and state.active_task_id not in project.plan_ids:
+            project.plan_ids.append(state.active_task_id)
+            project.updated_at = _now_iso()
+            save_project(project, state.profile_name)
+            new_plan = load_task_plan(state.active_task_id, state.profile_name)
+            if new_plan:
+                new_plan.project_id = project.project_id
+                save_task_plan(new_plan, state.profile_name)
+
+    elif action == "task_rename":
+        # /project task rename NEW_NAME [--plan NAME]
+        _, plan_name_flag = _parse_plan_flag(arg)
+        new_name = arg.replace(f"--plan {plan_name_flag}", "").strip() if plan_name_flag else arg.strip()
+        plan = _resolve_plan(state, plan_name_flag)
+        if not plan:
+            print("[/project task rename: нет активного плана. Укажите --plan <имя> или активируйте задачу]")
+            return
+        if not new_name:
+            print("[/project task rename: требует новое имя]")
+            return
+        plan.name = new_name
+        plan.updated_at = _now_iso()
+        save_task_plan(plan, state.profile_name)
+        print(f"[Задача переименована: '{new_name}']")
+
+    elif action == "task_describe":
+        # /project task describe TEXT [--plan NAME]
+        _, plan_name_flag = _parse_plan_flag(arg)
+        new_desc = arg.replace(f"--plan {plan_name_flag}", "").strip() if plan_name_flag else arg.strip()
+        plan = _resolve_plan(state, plan_name_flag)
+        if not plan:
+            print("[/project task describe: нет активного плана. Укажите --plan <имя> или активируйте задачу]")
+            return
+        if not new_desc:
+            print("[/project task describe: требует текст описания]")
+            return
+        plan.description = new_desc
+        plan.updated_at = _now_iso()
+        save_task_plan(plan, state.profile_name)
+        print(f"[Описание задачи обновлено]")
+
     else:
-        print(f"[Неизвестная подкоманда project: {action!r}. Доступны: new, list, switch, show, add-plan]")
+        print(f"[Неизвестная подкоманда project: {action!r}. Доступны: new, list, switch, show, add-plan, add-plan-name, tasks, task new, task rename, task describe]")
 
 
 def _handle_task_command(action: str, arg: str, state: SessionState, client: OpenAI) -> None:
@@ -1760,6 +1878,8 @@ def _apply_inline_updates(updates: dict, state: SessionState, client: Optional[O
             show_summary = True
         elif key == "strategy":
             _cmd_strategy(value, state)
+        elif key == "strategy_status":
+            _print_strategy_status(state)
         elif key in _STICKY_FACT_KEYS:
             _cmd_sticky_facts(key, value, state)
         elif key in _BRANCH_KEYS:
@@ -1775,7 +1895,7 @@ def _apply_inline_updates(updates: dict, state: SessionState, client: Optional[O
         elif key == "invariant" and isinstance(value, dict):
             _handle_invariant_command(value["action"], value.get("arg", ""), state)
         elif key == "project" and isinstance(value, dict):
-            _handle_project_command(value["action"], value.get("arg", ""), state)
+            _handle_project_command(value["action"], value.get("arg", ""), state, client)
 
         elif key == "profile" and isinstance(value, dict):
             _profile_action = value.get("action", "show")
@@ -1789,6 +1909,7 @@ def _apply_inline_updates(updates: dict, state: SessionState, client: Optional[O
                 print(f"  Формат:     {p.format or '(не задан)'}")
                 print(f"  Ограничения:{p.constraints or '(не заданы)'}")
                 print(f"  Прочее:     {p.custom or '(нет)'}")
+                print(f"  Модель:     {p.preferred_model or '(не задана)'}")
                 print(f"  Обновлён:   {p.updated_at}")
                 if not p.is_empty():
                     print(f"\n  Системный промпт:\n  {_lt.get_profile_prompt()}")
@@ -1843,6 +1964,19 @@ def _apply_inline_updates(updates: dict, state: SessionState, client: Optional[O
                 else:
                     print("[profile constraint: ожидается 'add <текст>' или 'del <текст>']")
 
+            elif _profile_action == "model":
+                if _profile_arg:
+                    _lt.profile.preferred_model = _profile_arg
+                    state.model = _profile_arg
+                    try:
+                        save_profile(_lt.profile, state.profile_name)
+                        print(f"[Модель профиля задана: {_profile_arg}]")
+                    except Exception as exc:
+                        print(f"[Ошибка сохранения профиля: {exc}]")
+                else:
+                    current = _lt.profile.preferred_model or "(не задана)"
+                    print(f"[Предпочтительная модель профиля: {current}]")
+
             elif _profile_action == "load":
                 load_name = _profile_arg or "default"
                 loaded_p = load_profile(load_name)
@@ -1878,6 +2012,10 @@ def _apply_inline_updates(updates: dict, state: SessionState, client: Optional[O
                         )
                         state.session_id_metrics = state.session_path.replace("/", "_").replace(".json", "")
                         print(f"[Профиль переключён: {load_name}] (история пуста)")
+                    # Применяем preferred_model из загруженного профиля
+                    if loaded_p.preferred_model:
+                        state.model = loaded_p.preferred_model
+                        print(f"[Модель переключена: {state.model}]")
                 else:
                     print(f"[Профиль не найден: {load_name}]")
 
@@ -2033,6 +2171,13 @@ def main() -> None:
                         _print_task_plan(_restored_plan, _restored_steps)
             except Exception as exc:
                 logger.warning("Не удалось загрузить последнюю сессию: %s", exc)
+
+    # Применяем preferred_model из профиля, если --model не был указан явно
+    _explicit_model_arg = getattr(args, "model", None)
+    _pref_model = state.memory.long_term.profile.preferred_model
+    if not _explicit_model_arg and _pref_model:
+        state.model = _pref_model
+        print(f"[Модель из профиля: {state.model}]")
 
     client = OpenAI(api_key=API_KEY, base_url=state.base_url)
 

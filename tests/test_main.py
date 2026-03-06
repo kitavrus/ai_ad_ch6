@@ -1134,6 +1134,69 @@ class TestProfileInlineCommands:
         # История должна очиститься — нет сессии для newuser
         assert all(m.content != "чужое сообщение" for m in state2.messages)
 
+    def test_profile_model_set(self, tmp_path, monkeypatch, capsys):
+        """'/profile model gpt-4' задаёт preferred_model и меняет state.model."""
+        monkeypatch.chdir(tmp_path)
+        state = self._make_state_with_memory()
+        state.profile_name = "default"
+        _apply_inline_updates({"profile": {"action": "model", "arg": "gpt-4"}}, state)
+        assert state.memory.long_term.profile.preferred_model == "gpt-4"
+        assert state.model == "gpt-4"
+        out = capsys.readouterr().out
+        assert "gpt-4" in out
+
+    def test_profile_model_show_empty(self, capsys):
+        """'/profile model' без аргумента показывает '(не задана)'."""
+        state = self._make_state_with_memory()
+        _apply_inline_updates({"profile": {"action": "model", "arg": ""}}, state)
+        out = capsys.readouterr().out
+        assert "(не задана)" in out
+
+    def test_profile_model_show_set(self, capsys):
+        """'/profile model' без аргумента показывает заданную модель."""
+        state = self._make_state_with_memory()
+        state.memory.long_term.profile.preferred_model = "claude-opus-4"
+        _apply_inline_updates({"profile": {"action": "model", "arg": ""}}, state)
+        out = capsys.readouterr().out
+        assert "claude-opus-4" in out
+
+    def test_profile_show_displays_model(self, capsys):
+        """'/profile show' отображает строку 'Модель'."""
+        state = self._make_state_with_memory()
+        state.memory.long_term.profile.preferred_model = "gpt-4"
+        _apply_inline_updates({"profile": {"action": "show", "arg": ""}}, state)
+        out = capsys.readouterr().out
+        assert "Модель" in out
+        assert "gpt-4" in out
+
+    def test_profile_load_applies_preferred_model(self, tmp_path, monkeypatch, capsys):
+        """'/profile load' применяет preferred_model из профиля."""
+        monkeypatch.chdir(tmp_path)
+        from chatbot.models import UserProfile
+        from chatbot.memory_storage import save_profile
+        p = UserProfile(name="moduser", preferred_model="gpt-4-turbo")
+        save_profile(p, "moduser")
+
+        state = self._make_state_with_memory()
+        assert state.model == "gpt-4"  # default из _make_state_with_memory
+        _apply_inline_updates({"profile": {"action": "load", "arg": "moduser"}}, state)
+        assert state.model == "gpt-4-turbo"
+        out = capsys.readouterr().out
+        assert "gpt-4-turbo" in out
+
+    def test_profile_load_no_preferred_model_keeps_model(self, tmp_path, monkeypatch):
+        """'/profile load' профиля без preferred_model не меняет state.model."""
+        monkeypatch.chdir(tmp_path)
+        from chatbot.models import UserProfile
+        from chatbot.memory_storage import save_profile
+        p = UserProfile(name="nomoduser")
+        save_profile(p, "nomoduser")
+
+        state = self._make_state_with_memory()
+        original_model = state.model
+        _apply_inline_updates({"profile": {"action": "load", "arg": "nomoduser"}}, state)
+        assert state.model == original_model
+
     def test_main_profile_flag_auto_resumes(self, monkeypatch, tmp_path, capsys):
         """--profile автоматически загружает последнюю сессию профиля без --resume."""
         monkeypatch.chdir(tmp_path)
