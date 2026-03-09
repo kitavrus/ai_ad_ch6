@@ -437,3 +437,130 @@ class TestFullLifecycle:
         # Возобновление
         _handle_task_command("resume", "", state, client=None)
         assert load_task_plan(plan.task_id, state.profile_name).phase == TaskPhase.EXECUTION
+
+
+class TestStepGuard:
+    """Команда /task step доступна только в фазе execution."""
+
+    def _make_plan_with_step(self, phase, state):
+        from chatbot.task_storage import save_task_plan, save_task_step
+        from chatbot.models import StepStatus, TaskStep
+        now = datetime.utcnow().isoformat()
+        plan = _make_plan(phase, total_steps=1)
+        step = TaskStep(
+            step_id=f"{plan.task_id}_step_001",
+            task_id=plan.task_id, index=1, title="Шаг 1",
+            status=StepStatus.PENDING, created_at=now,
+        )
+        plan.step_ids = [step.step_id]
+        save_task_plan(plan, state.profile_name)
+        save_task_step(step, state.profile_name)
+        state.active_task_id = plan.task_id
+        return plan
+
+    def test_step_works_in_execution(self, monkeypatch, tmp_path, capsys):
+        from chatbot.main import _handle_task_command
+        monkeypatch.chdir(tmp_path)
+        state = _make_state()
+        self._make_plan_with_step(TaskPhase.EXECUTION, state)
+        _handle_task_command("step", "done результат", state, client=None)
+        out = capsys.readouterr().out
+        assert "завершён" in out.lower()
+
+    @pytest.mark.parametrize("phase", [
+        TaskPhase.PLANNING, TaskPhase.VALIDATION,
+        TaskPhase.PAUSED, TaskPhase.DONE, TaskPhase.FAILED,
+    ])
+    def test_step_blocked_from_non_execution(self, phase, monkeypatch, tmp_path, capsys):
+        from chatbot.main import _handle_task_command
+        monkeypatch.chdir(tmp_path)
+        state = _make_state()
+        self._make_plan_with_step(phase, state)
+        _handle_task_command("step", "done результат", state, client=None)
+        out = capsys.readouterr().out
+        assert "execution" in out.lower()
+        assert "завершён" not in out.lower()
+
+
+class TestSessionPersistenceAfterPause:
+    """Состояние задачи сохраняется в сессии при паузе и восстанавливается при reload."""
+
+    def test_active_task_id_survives_session_save_reload(self, monkeypatch, tmp_path):
+        """active_task_id сохраняется в файле сессии и восстанавливается через _apply_session_data."""
+        from chatbot.main import _handle_task_command, _build_session_payload, _apply_session_data
+        from chatbot.storage import save_session, load_last_session
+        from chatbot.task_storage import save_task_plan, load_task_plan
+        monkeypatch.chdir(tmp_path)
+        state = _make_state()
+        plan = _make_plan(TaskPhase.EXECUTION)
+        save_task_plan(plan, state.profile_name)
+        state.active_task_id = plan.task_id
+        state.session_path = "dialogues/default/session_persist_test.json"
+        # Пауза
+        _handle_task_command("pause", "", state, client=None)
+        # Сохраняем сессию
+        save_session(_build_session_payload(state), state.session_path)
+        # Создаём новый state (эмулируем перезапуск)
+        new_state = _make_state()
+        loaded = load_last_session(profile_name="default")
+        assert loaded is not None
+        _, last_data = loaded
+        _apply_session_data(last_data, new_state)
+        # active_task_id восстановлен
+        assert new_state.active_task_id == plan.task_id
+        # Фаза PAUSED сохранена на диске
+        assert load_task_plan(plan.task_id, "default").phase == TaskPhase.PAUSED
+
+    def test_full_pause_persist_resume_cycle(self, monkeypatch, tmp_path, capsys):
+        """Полный цикл: EXECUTION → pause → save → reload → step_blocked → resume → step → VALIDATION → done."""
+        from chatbot.main import _handle_task_command, _build_session_payload, _apply_session_data
+        from chatbot.storage import save_session, load_last_session
+        from chatbot.task_storage import save_task_plan, save_task_step, load_task_plan
+        from chatbot.models import StepStatus, TaskStep
+        monkeypatch.chdir(tmp_path)
+        state = _make_state()
+        now = datetime.utcnow().isoformat()
+        plan = _make_plan(TaskPhase.EXECUTION, total_steps=1)
+        step = TaskStep(
+            step_id=f"{plan.task_id}_step_001",
+            task_id=plan.task_id, index=1, title="Шаг 1",
+            status=StepStatus.PENDING, created_at=now,
+        )
+        plan.step_ids = [step.step_id]
+        save_task_plan(plan, state.profile_name)
+        save_task_step(step, state.profile_name)
+        state.active_task_id = plan.task_id
+        state.session_path = "dialogues/default/session_cycle_test.json"
+
+        # Пауза → PAUSED
+        _handle_task_command("pause", "", state, client=None)
+        assert load_task_plan(plan.task_id, "default").phase == TaskPhase.PAUSED
+
+        # Сохраняем сессию
+        save_session(_build_session_payload(state), state.session_path)
+
+        # Перезапуск
+        new_state = _make_state()
+        loaded = load_last_session(profile_name="default")
+        _, last_data = loaded
+        _apply_session_data(last_data, new_state)
+        assert new_state.active_task_id == plan.task_id
+
+        # Попытка step из PAUSED → заблокировано
+        _handle_task_command("step", "done результат", new_state, client=None)
+        out = capsys.readouterr().out
+        assert "execution" in out.lower()
+
+        # Возобновление → EXECUTION
+        _handle_task_command("resume", "", new_state, client=None)
+        capsys.readouterr()
+        assert load_task_plan(plan.task_id, "default").phase == TaskPhase.EXECUTION
+
+        # Выполняем шаг → авто-VALIDATION
+        _handle_task_command("step", "done шаг выполнен", new_state, client=None)
+        assert load_task_plan(plan.task_id, "default").phase == TaskPhase.VALIDATION
+
+        # Финал из VALIDATION → DONE
+        _handle_task_command("done", "итог", new_state, client=None)
+        assert load_task_plan(plan.task_id, "default").phase == TaskPhase.DONE
+        assert new_state.active_task_id is None

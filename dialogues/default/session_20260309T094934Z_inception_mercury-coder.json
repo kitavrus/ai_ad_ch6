@@ -1,0 +1,33 @@
+{
+  "dialogue_session_id": "dialogues/default/session_20260309T094934Z_inception_mercury-coder.json",
+  "created_at": "2026-03-09T09:49:44Z",
+  "model": "inception/mercury-coder",
+  "base_url": "https://routerai.ru/api/v1",
+  "system_prompt": null,
+  "initial_prompt": null,
+  "messages": [],
+  "context_summary": "",
+  "turns": 0,
+  "last_user_input": null,
+  "last_assistant_content": null,
+  "duration_seconds": 10.362949848175049,
+  "total_tokens": 0,
+  "total_prompt_tokens": 0,
+  "total_completion_tokens": 0,
+  "requests": [],
+  "context_strategy": "sliding_window",
+  "sticky_facts": {},
+  "branches": [],
+  "active_branch_id": null,
+  "active_task_id": "e203cb14ee5245629eff58a6459266c8",
+  "active_task_ids": [
+    "e203cb14ee5245629eff58a6459266c8"
+  ],
+  "active_project_id": null,
+  "agent_mode": {
+    "enabled": false,
+    "invariants": [],
+    "max_retries": 3
+  },
+  "plan_dialog_state": null
+}

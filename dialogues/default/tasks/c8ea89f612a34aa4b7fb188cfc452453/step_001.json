@@ -1,0 +1,13 @@
+{
+  "step_id": "c8ea89f612a34aa4b7fb188cfc452453_step_001",
+  "task_id": "c8ea89f612a34aa4b7fb188cfc452453",
+  "index": 1,
+  "title": "Собрать данные о ценах",
+  "description": "Соберите исторические цены биткоина за март из надежных источников.",
+  "status": "pending",
+  "notes": "",
+  "result": "",
+  "created_at": "2026-03-09T09:47:51.347174",
+  "started_at": null,
+  "completed_at": null
+}

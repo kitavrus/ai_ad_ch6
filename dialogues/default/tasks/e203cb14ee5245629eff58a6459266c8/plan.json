@@ -1,0 +1,28 @@
+{
+  "task_id": "e203cb14ee5245629eff58a6459266c8",
+  "profile_name": "default",
+  "name": "Написать отчёт за март по биткоину",
+  "description": "Написать отчёт за март по биткоину",
+  "phase": "planning",
+  "step_ids": [
+    "e203cb14ee5245629eff58a6459266c8_step_001",
+    "e203cb14ee5245629eff58a6459266c8_step_002",
+    "e203cb14ee5245629eff58a6459266c8_step_003",
+    "e203cb14ee5245629eff58a6459266c8_step_004",
+    "e203cb14ee5245629eff58a6459266c8_step_005",
+    "e203cb14ee5245629eff58a6459266c8_step_006",
+    "e203cb14ee5245629eff58a6459266c8_step_007",
+    "e203cb14ee5245629eff58a6459266c8_step_008"
+  ],
+  "total_steps": 8,
+  "current_step_index": 0,
+  "created_at": "2026-03-09T09:49:44.446246",
+  "updated_at": "2026-03-09T09:49:44.446246",
+  "completed_at": null,
+  "failure_reason": null,
+  "result": "",
+  "llm_raw_response": "[{\"title\":\"Collect price data\",\"description\":\"Gather daily Bitcoin price, volume, and market cap data for the entire month of March from reliable financial sources.\"},{\"title\":\"Analyze price movements\",\"description\":\"Calculate key metrics such as average price, highs/lows, and volatility to identify overall market trends during March.\"},{\"title\":\"Summarize market news\",\"description\":\"Compile a list of significant news events, regulatory updates, and macroeconomic factors that impacted Bitcoin in March.\"},{\"title\":\"Perform technical analysis\",\"description\":\"Generate charts and apply indicators (e.g., moving averages, RSI) to assess Bitcoin’s technical behavior throughout the month.\"},{\"title\":\"Draft report sections\",\"description\":\"Write distinct sections covering Introduction, Market Overview, Technical Analysis, News Impact, and Conclusion, ensuring each is concise and data‑driven.\"},{\"title\":\"Review and edit\",\"description\":\"Proofread the report for factual accuracy, coherence, and adherence to any required formatting guidelines.\"},{\"title\":\"Add visuals\",\"description\":\"Insert relevant charts, tables, and screenshots to illustrate price trends, technical indicators, and news highlights.\"},{\"title\":\"Submit final report\",\"description\":\"Export the completed document to the desired format (PDF/Word) and deliver it to the intended audience or stakeholder.\"}]",
+  "clarifications": [],
+  "project_id": null,
+  "model": null
+}

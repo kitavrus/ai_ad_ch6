@@ -1,0 +1,13 @@
+{
+  "step_id": "c8ea89f612a34aa4b7fb188cfc452453_step_003",
+  "task_id": "c8ea89f612a34aa4b7fb188cfc452453",
+  "index": 3,
+  "title": "Подготовить графики",
+  "description": "Создайте графики изменения цены, объёма торгов и других показателей.",
+  "status": "pending",
+  "notes": "",
+  "result": "",
+  "created_at": "2026-03-09T09:47:51.347174",
+  "started_at": null,
+  "completed_at": null
+}
