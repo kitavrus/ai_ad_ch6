@@ -1,164 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="b35a12be-6e10-48e6-a4fd-76dfb149614a" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/.coverage" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/.env.example" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/.gitignore" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/CLAUDE.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/EXAMPLES.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/README.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/SCENARIOS.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/VERIFICATION_CHECKLIST.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/chatbot/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/chatbot/cli.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/chatbot/config.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/chatbot/context.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/chatbot/main.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/chatbot/memory.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/chatbot/memory_storage.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/chatbot/models.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/chatbot/project_storage.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/chatbot/storage.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/chatbot/task_storage.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/Alice/profile.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/Igor/profile.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/TestScenario/profile.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/TestScenario/session_20260306T190452Z_inception_mercury-coder.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/profile.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/session_20260309T094710Z_inception_mercury-coder.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/session_20260309T094934Z_inception_mercury-coder.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/tasks/c8ea89f612a34aa4b7fb188cfc452453/plan.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/tasks/c8ea89f612a34aa4b7fb188cfc452453/step_001.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/tasks/c8ea89f612a34aa4b7fb188cfc452453/step_002.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/tasks/c8ea89f612a34aa4b7fb188cfc452453/step_003.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/tasks/c8ea89f612a34aa4b7fb188cfc452453/step_004.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/tasks/c8ea89f612a34aa4b7fb188cfc452453/step_005.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/tasks/c8ea89f612a34aa4b7fb188cfc452453/step_006.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/tasks/c8ea89f612a34aa4b7fb188cfc452453/step_007.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/tasks/c8ea89f612a34aa4b7fb188cfc452453/step_008.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/tasks/e203cb14ee5245629eff58a6459266c8/plan.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/tasks/e203cb14ee5245629eff58a6459266c8/step_001.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/tasks/e203cb14ee5245629eff58a6459266c8/step_002.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/tasks/e203cb14ee5245629eff58a6459266c8/step_003.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/tasks/e203cb14ee5245629eff58a6459266c8/step_004.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/tasks/e203cb14ee5245629eff58a6459266c8/step_005.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/tasks/e203cb14ee5245629eff58a6459266c8/step_006.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/tasks/e203cb14ee5245629eff58a6459266c8/step_007.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/dialogues/default/tasks/e203cb14ee5245629eff58a6459266c8/step_008.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/pyproject.toml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/requirements.txt" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/research-command.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/research-common.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/research.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/schema-graph.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/script.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/__init__.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/conftest.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_agent.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_cli.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_cli_coverage.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_config.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_context.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_context_coverage.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_invariant_scenarios.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_main.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_main_coverage2.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_main_helpers.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_memory.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_memory_storage_coverage.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_models.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_models_coverage.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_profile_plan_integration.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_project.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_storage.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_task_cli.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_task_models.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_task_storage.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_task_storage_coverage.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent/tests/test_task_transitions.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.coverage" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.env.example" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/ai_ad_ch6.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/ai_ad_ch6.iml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/CLAUDE.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/EXAMPLES.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/SCENARIOS.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/VERIFICATION_CHECKLIST.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/chatbot/__init__.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/chatbot/cli.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/chatbot/config.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/chatbot/context.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/chatbot/main.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/chatbot/memory.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/chatbot/memory_storage.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/chatbot/models.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/chatbot/project_storage.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/chatbot/storage.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/chatbot/task_storage.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/Alice/profile.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/Igor/profile.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/TestScenario/profile.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/TestScenario/session_20260306T190452Z_inception_mercury-coder.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/profile.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/session_20260309T094710Z_inception_mercury-coder.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/session_20260309T094934Z_inception_mercury-coder.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/tasks/c8ea89f612a34aa4b7fb188cfc452453/plan.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/tasks/c8ea89f612a34aa4b7fb188cfc452453/step_001.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/tasks/c8ea89f612a34aa4b7fb188cfc452453/step_002.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/tasks/c8ea89f612a34aa4b7fb188cfc452453/step_003.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/tasks/c8ea89f612a34aa4b7fb188cfc452453/step_004.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/tasks/c8ea89f612a34aa4b7fb188cfc452453/step_005.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/tasks/c8ea89f612a34aa4b7fb188cfc452453/step_006.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/tasks/c8ea89f612a34aa4b7fb188cfc452453/step_007.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/tasks/c8ea89f612a34aa4b7fb188cfc452453/step_008.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/tasks/e203cb14ee5245629eff58a6459266c8/plan.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/tasks/e203cb14ee5245629eff58a6459266c8/step_001.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/tasks/e203cb14ee5245629eff58a6459266c8/step_002.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/tasks/e203cb14ee5245629eff58a6459266c8/step_003.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/tasks/e203cb14ee5245629eff58a6459266c8/step_004.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/tasks/e203cb14ee5245629eff58a6459266c8/step_005.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/tasks/e203cb14ee5245629eff58a6459266c8/step_006.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/tasks/e203cb14ee5245629eff58a6459266c8/step_007.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/dialogues/default/tasks/e203cb14ee5245629eff58a6459266c8/step_008.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/pyproject.toml" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/requirements.txt" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/research-command.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/research-common.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/research.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/schema-graph.md" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/script.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/__init__.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/conftest.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_agent.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_cli.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_cli_coverage.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_config.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_context.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_context_coverage.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_invariant_scenarios.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_main.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_main_coverage2.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_main_helpers.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_memory.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_memory_storage_coverage.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_models.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_models_coverage.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_profile_plan_integration.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_project.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_storage.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_task_cli.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_task_models.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_task_storage.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_task_storage_coverage.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/test_task_transitions.py" beforeDir="false" />
+    <list default="true" id="b35a12be-6e10-48e6-a4fd-76dfb149614a" name="Changes" comment="day 16 MCP">
+      <change afterPath="$PROJECT_DIR$/llm_mcp/weather/.env" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/llm_mcp/weather/.env.example" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/llm_mcp/weather/requirements.txt" beforeDir="false" afterPath="$PROJECT_DIR$/llm_mcp/weather/requirements.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/llm_mcp/weather/weather_server.py" beforeDir="false" afterPath="$PROJECT_DIR$/llm_mcp/weather/weather_server.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -192,21 +40,61 @@
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
     "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "FastAPI.Unnamed.executor": "Run",
+    "FastAPI.api-weather.executor": "Run",
     "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "Python.main.executor": "Run",
     "Python.script.executor": "Run",
+    "Python.uvicorn main:app --reload.executor": "Run",
+    "Python.weather.executor": "Run",
     "Python.weather_server.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
     "RunOnceActivity.git.unshallow": "true",
     "RunOnceActivity.typescript.service.memoryLimit.init": "true",
     "SHARE_PROJECT_CONFIGURATION_FILES": "true",
     "ai.playground.ignore.import.keys.banner.in.settings": "true",
     "git-widget-placeholder": "main",
+    "last_opened_file_path": "/Users/igorpotema/mycode/ai_ad_ch6/llm_mcp/weather",
     "node.js.detected.package.eslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
     "vue.rearranger.settings.migration": "true"
   }
 }]]></component>
-  <component name="RunManager" selected="Python.weather_server">
+  <component name="RecentsManager">
+    <key name="CopyFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$/llm_mcp/weather" />
+    </key>
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$" />
+    </key>
+  </component>
+  <component name="RunManager" selected="Python.script">
+    <configuration name="main" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="ai_ad_ch6" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/api_for_mcp/weather" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="RUN_TOOL" value="" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/api_for_mcp/weather/main.py" />
+      <option name="PARAMETERS" value="uvicorn main:app --reload" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
     <configuration name="script" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="ai_ad_ch6" />
       <option name="ENV_FILES" value="" />
@@ -224,6 +112,30 @@
       <option name="RUN_TOOL" value="" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/llm_agent/script.py" />
       <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="weather" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="ai_ad_ch6" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/api_for_mcp/weather" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="RUN_TOOL" value="" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/api_for_mcp/weather" />
+      <option name="PARAMETERS" value="uvicorn main:app --reload" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
       <option name="MODULE_MODE" value="false" />
@@ -255,10 +167,36 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
+    <configuration name="api-weather" type="Python.FastAPI">
+      <option name="file" value="$PROJECT_DIR$/api_for_mcp/weather/main.py" />
+      <module name="ai_ad_ch6" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="$PROJECT_DIR$/.venv/bin/python" />
+      <option name="SDK_NAME" value="Python 3.9 (ai_ad_ch6)" />
+      <option name="WORKING_DIRECTORY" value="" />
+      <option name="IS_MODULE_SDK" value="false" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <EXTENSION ID="PythonCoverageRunConfigurationExtension" runner="coverage.py" />
+      <option name="RUN_TOOL" value="" />
+      <option name="launchJavascriptDebuger" value="false" />
+      <method v="2" />
+    </configuration>
+    <list>
+      <item itemvalue="FastAPI.api-weather" />
+      <item itemvalue="Python.weather" />
+      <item itemvalue="Python.main" />
+      <item itemvalue="Python.script" />
+      <item itemvalue="Python.weather_server" />
+    </list>
     <recent_temporary>
       <list>
         <item itemvalue="Python.script" />
         <item itemvalue="Python.weather_server" />
+        <item itemvalue="Python.main" />
+        <item itemvalue="Python.weather" />
       </list>
     </recent_temporary>
   </component>
@@ -277,15 +215,30 @@
       <option name="number" value="Default" />
       <option name="presentableId" value="Default" />
       <updated>1773129201603</updated>
-      <workItem from="1773129203206" duration="1782000" />
+      <workItem from="1773129203206" duration="10666000" />
     </task>
+    <task id="LOCAL-00001" summary="day 16 MCP">
+      <option name="closed" value="true" />
+      <created>1773131596126</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1773131596126</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="day 16 MCP" />
+    <option name="LAST_COMMIT_MESSAGE" value="day 16 MCP" />
+  </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
-    <SUITE FILE_PATH="coverage/ai_ad_ch6$weather_server.coverage" NAME="weather_server Coverage Results" MODIFIED="1773131309818" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/llm_mcp/weather" />
-    <SUITE FILE_PATH="coverage/ai_ad_ch6$script.coverage" NAME="script Coverage Results" MODIFIED="1773131315123" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/llm_agent" />
+    <SUITE FILE_PATH="coverage/ai_ad_ch6$main.coverage" NAME="main Coverage Results" MODIFIED="1773172479227" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/api_for_mcp/weather" />
+    <SUITE FILE_PATH="coverage/ai_ad_ch6$Unnamed.coverage" NAME="api-weather Coverage Results" MODIFIED="1773214464281" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="" />
+    <SUITE FILE_PATH="coverage/ai_ad_ch6$weather_server.coverage" NAME="weather_server Coverage Results" MODIFIED="1773214472874" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/llm_mcp/weather" />
+    <SUITE FILE_PATH="coverage/ai_ad_ch6$script.coverage" NAME="script Coverage Results" MODIFIED="1773214491047" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/llm_agent" />
   </component>
 </project>
