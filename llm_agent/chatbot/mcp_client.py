@@ -3,17 +3,26 @@
 import asyncio
 import logging
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_SERVER_PATH = os.path.abspath(
+_DEFAULT_WEATHER_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "llm_mcp", "weather", "weather_server.py")
 )
 
+_DEFAULT_SCHEDULER_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "llm_mcp", "scheduler", "scheduler_server.py")
+)
 
-class MCPWeatherClient:
-    def __init__(self, server_script_path: str = _DEFAULT_SERVER_PATH) -> None:
+# Keep for backwards compatibility
+_DEFAULT_SERVER_PATH = _DEFAULT_WEATHER_PATH
+
+
+class MCPClient:
+    """Base class: sync facade over async MCP stdio transport."""
+
+    def __init__(self, server_script_path: str) -> None:
         self.server_script_path = os.path.abspath(server_script_path)
         self._tools: List[Dict[str, Any]] = []
         self._connected: bool = False
@@ -65,6 +74,61 @@ class MCPWeatherClient:
                 if result.content:
                     return result.content[0].text
                 return ""
+
+
+class MCPWeatherClient(MCPClient):
+    """MCP client for the weather server."""
+
+    def __init__(self, server_script_path: str = _DEFAULT_WEATHER_PATH) -> None:
+        super().__init__(server_script_path)
+
+
+class MCPSchedulerClient(MCPClient):
+    """MCP client for the scheduler server."""
+
+    def __init__(self, server_script_path: str = _DEFAULT_SCHEDULER_PATH) -> None:
+        super().__init__(server_script_path)
+
+
+class MCPClientManager:
+    """Manages multiple MCP clients and routes tool calls by tool name."""
+
+    def __init__(self, clients: List[MCPClient]) -> None:
+        self._clients = clients
+        self._tool_to_client: Dict[str, MCPClient] = {}
+        self._all_tools: List[Dict[str, Any]] = []
+
+    def connect_all(self) -> Dict[str, bool]:
+        results: Dict[str, bool] = {}
+        for client in self._clients:
+            ok = client.connect()
+            results[client.server_script_path] = ok
+        self._build_tool_index()
+        return results
+
+    def _build_tool_index(self) -> None:
+        self._tool_to_client = {}
+        self._all_tools = []
+        for client in self._clients:
+            if client.connected:
+                for tool in client.tools_as_openai_format():
+                    name = tool.get("function", {}).get("name", "")
+                    if name:
+                        self._tool_to_client[name] = client
+                        self._all_tools.append(tool)
+
+    def tools_as_openai_format(self) -> List[Dict[str, Any]]:
+        return list(self._all_tools)
+
+    def call_tool(self, name: str, arguments: Dict[str, Any]) -> str:
+        client = self._tool_to_client.get(name)
+        if client is None:
+            return f"[MCP error: unknown tool '{name}']"
+        return client.call_tool(name, arguments)
+
+    @property
+    def connected(self) -> bool:
+        return any(c.connected for c in self._clients)
 
 
 def _convert_tools_to_openai(mcp_tools) -> List[Dict[str, Any]]:

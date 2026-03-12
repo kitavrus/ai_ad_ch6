@@ -206,6 +206,16 @@ def parse_inline_command(line: str) -> dict:
             return {"plan": {"action": "builder", "arg": _task_arg}}
         return {"task": {"action": _task_action, "arg": _task_arg}}
 
+    # Специальная обработка /reminders
+    if _first_word == "reminders":
+        _rest = payload[len("reminders"):].strip()
+        _parts = _rest.split(None, 1)
+        _sub = _parts[0].lower() if _parts else "list"
+        _arg = _parts[1].strip() if len(_parts) > 1 else ""
+        # /reminders list pending → action=list, arg=pending
+        # /reminders show <id> → action=show, arg=<id>
+        return {"reminders": {"action": _sub, "arg": _arg}}
+
     # Специальная обработка /mcp
     if _first_word == "mcp":
         _rest = payload[len("mcp"):].strip()

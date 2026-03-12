@@ -7,7 +7,7 @@ load_dotenv()
 
 mcp = FastMCP("weather")
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:8882"
 API_KEY = os.getenv("WEATHER_API_KEY", "")
 
 _HEADERS = {"X-API-Key": API_KEY} if API_KEY else {}

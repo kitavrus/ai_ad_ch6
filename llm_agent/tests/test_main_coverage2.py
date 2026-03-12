@@ -650,3 +650,66 @@ class TestAppendAndGetMessages:
         state = _make_state()
         result = _get_active_messages(state)
         assert result is state.messages
+
+
+# ---------------------------------------------------------------------------
+# _tools_for_llm
+# ---------------------------------------------------------------------------
+
+class TestToolsForLlm:
+    def _make_create_reminder_tool(self, required=None):
+        return {
+            "type": "function",
+            "function": {
+                "name": "create_reminder",
+                "description": "Создать напоминание",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "description": {"type": "string"},
+                        "delay_seconds": {"type": "integer"},
+                        "webhook_url": {"type": "string"},
+                    },
+                    "required": required or ["description", "delay_seconds", "webhook_url"],
+                },
+            },
+        }
+
+    def test_webhook_url_removed_from_properties(self):
+        from llm_agent.chatbot.main import _tools_for_llm
+        tools = [self._make_create_reminder_tool()]
+        result = _tools_for_llm(tools)
+        props = result[0]["function"]["parameters"]["properties"]
+        assert "webhook_url" not in props
+        assert "description" in props
+        assert "delay_seconds" in props
+
+    def test_webhook_url_removed_from_required(self):
+        from llm_agent.chatbot.main import _tools_for_llm
+        tools = [self._make_create_reminder_tool()]
+        result = _tools_for_llm(tools)
+        required = result[0]["function"]["parameters"]["required"]
+        assert "webhook_url" not in required
+
+    def test_original_tool_not_mutated(self):
+        from llm_agent.chatbot.main import _tools_for_llm
+        tool = self._make_create_reminder_tool()
+        _tools_for_llm([tool])
+        assert "webhook_url" in tool["function"]["parameters"]["properties"]
+
+    def test_other_tools_unaffected(self):
+        from llm_agent.chatbot.main import _tools_for_llm
+        other = {
+            "type": "function",
+            "function": {
+                "name": "get_weather",
+                "description": "Погода",
+                "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]},
+            },
+        }
+        result = _tools_for_llm([other])
+        assert result[0]["function"]["parameters"]["properties"] == {"city": {"type": "string"}}
+
+    def test_empty_list(self):
+        from llm_agent.chatbot.main import _tools_for_llm
+        assert _tools_for_llm([]) == []

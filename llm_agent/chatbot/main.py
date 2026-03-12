@@ -7,13 +7,19 @@ import logging
 import os
 import re
 import time
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 import uuid
 
 from openai import OpenAI
 
 from llm_agent.chatbot.cli import config_from_args, get_resume_flag, parse_args, parse_inline_command
-from llm_agent.chatbot.mcp_client import MCPWeatherClient
+from llm_agent.chatbot.mcp_client import (
+    MCPClientManager,
+    MCPSchedulerClient,
+    MCPWeatherClient,
+    _convert_tools_to_openai,
+)
+from llm_agent.chatbot.notification_server import NotificationServer
 from llm_agent.chatbot.config import (
     API_KEY,
     CONTEXT_RECENT_MESSAGES,
@@ -73,6 +79,13 @@ from llm_agent.chatbot.project_storage import (
     list_projects,
     load_project,
     save_project,
+)
+from llm_agent.chatbot.reminders_storage import (
+    fetch_reminder,
+    fetch_reminders,
+    get_reminders_path,
+    save_all_reminders,
+    update_reminder_in_file,
 )
 from llm_agent.chatbot.storage import load_last_session, log_request_metric, save_session
 from llm_agent.chatbot.task_storage import (
@@ -1853,13 +1866,36 @@ def _cmd_knowledge(key: str, value: Any, state: SessionState, client: Optional[O
 # ---------------------------------------------------------------------------
 
 
+def _tools_for_llm(tools: list) -> list:
+    """Strip internal-only parameters from tool schemas before sending to LLM.
+
+    ``webhook_url`` in ``create_reminder`` is injected by the chatbot; the LLM
+    must not see it so it focuses on the required fields.
+    """
+    import copy
+    result = []
+    for tool in tools:
+        tool = copy.deepcopy(tool)
+        fn = tool.get("function", {})
+        if fn.get("name") == "create_reminder":
+            params = fn.get("parameters", {})
+            props = params.get("properties", {})
+            props.pop("webhook_url", None)
+            required = params.get("required", [])
+            if "webhook_url" in required:
+                required.remove("webhook_url")
+        result.append(tool)
+    return result
+
+
 def _handle_tool_calls(
     response: Any,
     api_messages: list,
     state: "SessionState",
     client: OpenAI,
-    mcp_client: "MCPWeatherClient",
+    mcp_client: "MCPClientManager",
     extra: Any,
+    notification_server: Optional["NotificationServer"] = None,
 ) -> tuple:
     """Обрабатывает цепочку tool_calls от LLM через MCP и возвращает (final_response, text)."""
     import json as _json
@@ -1889,6 +1925,8 @@ def _handle_tool_calls(
                 arguments = _json.loads(tc.function.arguments or "{}")
             except Exception:
                 arguments = {}
+            if name == "create_reminder" and notification_server is not None:
+                arguments.setdefault("webhook_url", notification_server.get_url())
             print(f"[MCP: вызов инструмента '{name}' с аргументами {arguments}]")
             result_text = mcp_client.call_tool(name, arguments)
             print(f"[MCP: результат '{name}': {result_text[:200]}]")
@@ -1927,7 +1965,58 @@ def _handle_tool_calls(
     return response, text
 
 
-def _handle_mcp_command(action: str, arg: str, mcp_client: "MCPWeatherClient") -> None:
+def _print_reminders_table(reminders: List[Dict]) -> None:
+    """Выводит таблицу напоминаний: ID(8), статус, scheduled_at, описание."""
+    if not reminders:
+        print("[Reminders: список пуст]")
+        return
+    print(f"\n{'ID':8}  {'Статус':10}  {'Запланировано':20}  Описание")
+    print("-" * 72)
+    for r in reminders:
+        rid = str(r.get("id", ""))[:8]
+        status = str(r.get("status", ""))
+        scheduled = str(r.get("scheduled_at", "") or "")[:19]
+        desc = str(r.get("description", ""))
+        print(f"{rid:8}  {status:10}  {scheduled:20}  {desc}")
+    print()
+
+
+def _print_reminder_detail(reminder: Dict) -> None:
+    """Выводит все поля одного напоминания."""
+    print("\n--- Напоминание ---")
+    for key, val in reminder.items():
+        print(f"  {key}: {val}")
+    print("-------------------\n")
+
+
+def _handle_reminders_command(action: str, arg: Optional[str], state: "SessionState") -> None:
+    """Обрабатывает inline-команды /reminders list|refresh|show."""
+    profile = state.profile_name
+    if action in ("list", "refresh", ""):
+        status_filter = arg or None
+        reminders = fetch_reminders(status=status_filter)
+        if reminders is None:
+            print("[Reminders: не удалось получить данные. Проверьте, что API запущен на :8881]")
+            return
+        save_all_reminders(reminders, profile)
+        _print_reminders_table(reminders)
+        print(f"[Сохранено в {get_reminders_path(profile)}]")
+    elif action == "show":
+        task_id = arg
+        if not task_id:
+            print("[Reminders: укажите ID задачи: /reminders show <id>]")
+            return
+        reminder = fetch_reminder(task_id)
+        if reminder is None:
+            print(f"[Reminders: напоминание '{task_id}' не найдено]")
+            return
+        update_reminder_in_file(reminder, profile)
+        _print_reminder_detail(reminder)
+    else:
+        print("[Reminders: доступны: list [status], refresh, show <id>]")
+
+
+def _handle_mcp_command(action: str, arg: str, mcp_client: "MCPClientManager") -> None:
     """Обрабатывает inline-команды /mcp status|tools|reconnect."""
     if action == "status":
         if mcp_client.connected:
@@ -1945,8 +2034,8 @@ def _handle_mcp_command(action: str, arg: str, mcp_client: "MCPWeatherClient") -
                 fn = t.get("function", {})
                 print(f"  - {fn.get('name')}: {fn.get('description', '')}")
     elif action == "reconnect":
-        ok = mcp_client.connect()
-        if ok:
+        results = mcp_client.connect_all()
+        if any(results.values()):
             count = len(mcp_client.tools_as_openai_format())
             print(f"[MCP: переподключение успешно | инструментов: {count}]")
         else:
@@ -1968,7 +2057,7 @@ def _apply_inline_updates(
     updates: dict,
     state: SessionState,
     client: Optional[OpenAI] = None,
-    mcp_client: Optional["MCPWeatherClient"] = None,
+    mcp_client: Optional["MCPClientManager"] = None,
 ) -> bool:
     """Применяет разобранные inline-команды к рабочему состоянию сессии.
 
@@ -2011,6 +2100,8 @@ def _apply_inline_updates(
             _handle_project_command(value["action"], value.get("arg", ""), state, client)
         elif key == "mcp" and isinstance(value, dict) and mcp_client is not None:
             _handle_mcp_command(value["action"], value.get("arg", ""), mcp_client)
+        elif key == "reminders" and isinstance(value, dict):
+            _handle_reminders_command(value["action"], value.get("arg"), state)
 
         elif key == "profile" and isinstance(value, dict):
             _profile_action = value.get("action", "show")
@@ -2220,6 +2311,32 @@ def _get_active_messages(state: SessionState) -> List[ChatMessage]:
 # ---------------------------------------------------------------------------
 
 
+def _start_notification_watcher(notification_server: "NotificationServer", state: "SessionState") -> None:
+    """Запускает daemon-поток, который немедленно печатает уведомления из очереди.
+
+    При получении уведомления автоматически обновляет файл reminders.json.
+    """
+    import sys
+    import threading
+
+    def _watcher() -> None:
+        while True:
+            notes = notification_server.check_notifications()
+            for note in notes:
+                sys.stdout.write(f"\r\n⏰ {note}\n> ")
+                sys.stdout.flush()
+                match = re.search(r'\(id=([^)]+)\)', note)
+                if match:
+                    task_id = match.group(1)
+                    reminder = fetch_reminder(task_id)
+                    if reminder:
+                        update_reminder_in_file(reminder, state.profile_name)
+            time.sleep(0.5)
+
+    t = threading.Thread(target=_watcher, daemon=True)
+    t.start()
+
+
 def main() -> None:
     """Основной поток выполнения CLI: инициализация и интерактивный диалог."""
     if not API_KEY:
@@ -2296,13 +2413,22 @@ def main() -> None:
 
     client = OpenAI(api_key=API_KEY, base_url=state.base_url)
 
-    # Инициализируем MCP weather client
-    _mcp_client = MCPWeatherClient()
-    _mcp_connected = _mcp_client.connect()
-    if _mcp_connected:
-        print(f"[MCP: подключён | инструментов: {len(_mcp_client.tools_as_openai_format())}]")
-    else:
-        print("[MCP: weather-сервер недоступен (продолжаем без инструментов)]")
+    # Webhook notification server
+    _notification_server: Optional[NotificationServer] = None
+    try:
+        _notification_server = NotificationServer()
+        _notification_server.start()
+        print(f"[Webhook: {_notification_server.get_url()}]")
+        _start_notification_watcher(_notification_server, state)
+    except OSError as exc:
+        print(f"[Webhook: не удалось запустить ({exc}). Push-уведомления отключены.]")
+
+    # Оба MCP клиента через менеджер
+    _mcp_client = MCPClientManager([MCPWeatherClient(), MCPSchedulerClient()])
+    for name, ok in _mcp_client.connect_all().items():
+        status = "подключён" if ok else "недоступен"
+        print(f"[MCP: {os.path.basename(name)} {status}]")
+    print(f"[MCP: всего инструментов: {len(_mcp_client.tools_as_openai_format())}]")
 
     # Создаём путь к файлу сессии (если не восстановлено из предыдущей)
     if state.session_path is None:
@@ -2470,7 +2596,7 @@ def main() -> None:
         try:
             start_call = time.perf_counter()
             extra = {"top_k": state.top_k} if state.top_k is not None else None
-            _tools_param = _mcp_client.tools_as_openai_format() if _mcp_client.connected else None
+            _tools_param = _tools_for_llm(_mcp_client.tools_as_openai_format()) if _mcp_client.connected else None
             response = client.chat.completions.create(
                 model=state.model,
                 messages=api_messages,
@@ -2487,7 +2613,10 @@ def main() -> None:
         api_call_time = time.perf_counter() - start_call
 
         # Обрабатываем tool_calls (MCP)
-        response, text = _handle_tool_calls(response, api_messages, state, client, _mcp_client, extra)
+        response, text = _handle_tool_calls(
+            response, api_messages, state, client, _mcp_client, extra,
+            notification_server=_notification_server,
+        )
 
         # Stateful Agent: self-correction validation loop
         display_text = text

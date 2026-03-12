@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from llm_agent.chatbot.mcp_client import MCPWeatherClient, _convert_tools_to_openai
+from llm_agent.chatbot.mcp_client import MCPClientManager, MCPWeatherClient, _convert_tools_to_openai
 
 
 # ---------------------------------------------------------------------------
@@ -190,24 +190,26 @@ def test_handle_mcp_command_tools_empty(capsys):
 
 
 def test_handle_mcp_command_reconnect_success(capsys):
-    client = MCPWeatherClient.__new__(MCPWeatherClient)
-    client._connected = False
-    client._tools = []
-    client.server_script_path = "/fake/server.py"
     schema = {"type": "object", "properties": {}}
+    weather_client = MCPWeatherClient.__new__(MCPWeatherClient)
+    weather_client._connected = False
+    weather_client._tools = []
+    weather_client.server_script_path = "/fake/weather_server.py"
+    manager = MCPClientManager([weather_client])
     with patch("asyncio.run", return_value=_convert_tools_to_openai([_make_mcp_tool("get_weather", "d", schema)])):
-        _handle_mcp_command("reconnect", "", client)
+        _handle_mcp_command("reconnect", "", manager)
     out = capsys.readouterr().out
     assert "успешно" in out
 
 
 def test_handle_mcp_command_reconnect_failure(capsys):
-    client = MCPWeatherClient.__new__(MCPWeatherClient)
-    client._connected = False
-    client._tools = []
-    client.server_script_path = "/fake/server.py"
+    weather_client = MCPWeatherClient.__new__(MCPWeatherClient)
+    weather_client._connected = False
+    weather_client._tools = []
+    weather_client.server_script_path = "/fake/weather_server.py"
+    manager = MCPClientManager([weather_client])
     with patch("asyncio.run", side_effect=Exception("fail")):
-        _handle_mcp_command("reconnect", "", client)
+        _handle_mcp_command("reconnect", "", manager)
     out = capsys.readouterr().out
     assert "не удалось" in out
 
