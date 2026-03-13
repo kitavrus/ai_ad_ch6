@@ -1,5 +1,6 @@
 import asyncio
 import os
+import uvicorn
 import uuid
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -134,3 +135,7 @@ def cancel_reminder(task_id: str):
         raise HTTPException(status_code=409, detail=f"Нельзя отменить задачу со статусом '{task.status}'")
     task.status = ReminderStatus.cancelled
     return task
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8881)

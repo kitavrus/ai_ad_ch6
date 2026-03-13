@@ -15,7 +15,9 @@ from openai import OpenAI
 from llm_agent.chatbot.cli import config_from_args, get_resume_flag, parse_args, parse_inline_command
 from llm_agent.chatbot.mcp_client import (
     MCPClientManager,
+    MCPPdfMakerClient,
     MCPSchedulerClient,
+    MCPSaveToFileClient,
     MCPWeatherClient,
     _convert_tools_to_openai,
 )
@@ -2424,7 +2426,12 @@ def main() -> None:
         print(f"[Webhook: не удалось запустить ({exc}). Push-уведомления отключены.]")
 
     # Оба MCP клиента через менеджер
-    _mcp_client = MCPClientManager([MCPWeatherClient(), MCPSchedulerClient()])
+    _mcp_client = MCPClientManager([
+        MCPWeatherClient(),
+        MCPSchedulerClient(),
+        MCPPdfMakerClient(),
+        MCPSaveToFileClient(),
+    ])
     for name, ok in _mcp_client.connect_all().items():
         status = "подключён" if ok else "недоступен"
         print(f"[MCP: {os.path.basename(name)} {status}]")

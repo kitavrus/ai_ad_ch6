@@ -1,0 +1,12 @@
+{
+  "model": "inception/mercury-coder",
+  "endpoint": "chat",
+  "temp": 0.7,
+  "ttft": 1.4970829579979181,
+  "req_time": 1.4970829579979181,
+  "total_time": 6.1098082065582275,
+  "tokens": 454,
+  "p_tokens": 280,
+  "c_tokens": 174,
+  "cost_rub": 0.06810000000000001
+}

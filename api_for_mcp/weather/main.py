@@ -1,4 +1,5 @@
 import os
+import uvicorn
 from dotenv import load_dotenv
 load_dotenv()
 from fastapi import FastAPI, HTTPException, Depends
@@ -131,3 +132,7 @@ def get_weather(city_name: str):
         return WEATHER_DATA[key]
     available = ", ".join(data.city for data in WEATHER_DATA.values())
     raise HTTPException(status_code=404, detail=f"Город '{city_name}' не найден. Доступные города: {available}")
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8882)

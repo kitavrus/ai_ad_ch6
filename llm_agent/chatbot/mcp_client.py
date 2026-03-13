@@ -15,6 +15,14 @@ _DEFAULT_SCHEDULER_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "..", "..", "llm_mcp", "scheduler", "scheduler_server.py")
 )
 
+_DEFAULT_PDF_MAKER_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "llm_mcp", "pdf-maker", "pdf_server.py")
+)
+
+_DEFAULT_SAVE_TO_FILE_PATH = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "llm_mcp", "save_to_file", "save_server.py")
+)
+
 # Keep for backwards compatibility
 _DEFAULT_SERVER_PATH = _DEFAULT_WEATHER_PATH
 
@@ -87,6 +95,20 @@ class MCPSchedulerClient(MCPClient):
     """MCP client for the scheduler server."""
 
     def __init__(self, server_script_path: str = _DEFAULT_SCHEDULER_PATH) -> None:
+        super().__init__(server_script_path)
+
+
+class MCPPdfMakerClient(MCPClient):
+    """MCP client for the pdf-maker server."""
+
+    def __init__(self, server_script_path: str = _DEFAULT_PDF_MAKER_PATH) -> None:
+        super().__init__(server_script_path)
+
+
+class MCPSaveToFileClient(MCPClient):
+    """MCP client for the save-to-file server."""
+
+    def __init__(self, server_script_path: str = _DEFAULT_SAVE_TO_FILE_PATH) -> None:
         super().__init__(server_script_path)
 
 
