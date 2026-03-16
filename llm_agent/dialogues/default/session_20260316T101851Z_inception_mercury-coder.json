@@ -1,6 +1,6 @@
 {
   "dialogue_session_id": "dialogues/default/session_20260316T101851Z_inception_mercury-coder.json",
-  "created_at": "2026-03-16T10:20:38Z",
+  "created_at": "2026-03-16T10:26:13Z",
   "model": "inception/mercury-coder",
   "base_url": "https://routerai.ru/api/v1",
   "system_prompt": null,
@@ -77,26 +77,13 @@
   ],
   "context_summary": "",
   "turns": 4,
-  "last_user_input": "Посмотри погоду в Питере, Москве и Казани, оформми результаты в PDF и сохрани как файл на диск",
-  "last_assistant_content": "✅ PDF с погодой в Санкт-Петербурге, Москве и Казани был создан и сохранён на диск.\n\n**Путь к файлу:** `/private/tmp/saved_files/weather_report.pdf`\n\nЕсли понадобится открыть файл, просто откройте его в любом PDF‑просмотрщике.",
-  "duration_seconds": 106.9606499671936,
+  "last_user_input": null,
+  "last_assistant_content": null,
+  "duration_seconds": 442.14227414131165,
   "total_tokens": 1329,
   "total_prompt_tokens": 1222,
   "total_completion_tokens": 107,
-  "requests": [
-    {
-      "model": "inception/mercury-coder",
-      "endpoint": "chat",
-      "temp": 0.7,
-      "ttft": 2.2409998330113012,
-      "req_time": 2.2409998330113012,
-      "total_time": 106.95994901657104,
-      "tokens": 1033,
-      "p_tokens": 975,
-      "c_tokens": 58,
-      "cost_rub": 0.15494999999999998
-    }
-  ],
+  "requests": [],
   "context_strategy": "sliding_window",
   "sticky_facts": {},
   "branches": [],

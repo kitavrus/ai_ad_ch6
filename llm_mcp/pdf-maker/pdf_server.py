@@ -18,7 +18,7 @@ _SAVE_HEADERS = {"X-API-Key": SAVE_API_KEY} if SAVE_API_KEY else {}
 
 @mcp.tool()
 def create_pdf(
-    title: str,
+    title: str | None = None,
     content: str | None = None,
     sections: list | None = None,
     author: str | None = None,
@@ -48,6 +48,13 @@ def create_pdf(
     Возвращает путь к сохранённому файлу на диске.
     """
     try:
+        # Auto-generate title if not provided
+        if not title:
+            if content:
+                title = content[:50].strip().rstrip(".,;:") or "Document"
+            else:
+                title = "Document"
+
         # Build sections list: prepend plain content if provided
         built_sections = list(sections or [])
         if content:

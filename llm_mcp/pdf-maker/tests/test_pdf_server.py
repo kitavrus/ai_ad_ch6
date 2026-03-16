@@ -91,14 +91,22 @@ class TestCreatePdf:
         assert "сохранён" in result
 
 
-class TestInvalidInput:
-    def test_empty_title_returns_validation_error(self, valid_auth):
-        result = create_pdf(title="")
-        assert "Ошибка валидации" in result or "422" in result
+class TestNoTitle:
+    def test_no_title_with_content_succeeds(self, valid_auth):
+        result = create_pdf(content="Погода в Москве: -3°C")
+        assert "сохранён" in result
 
-    def test_missing_title_returns_validation_error(self, valid_auth):
+    def test_no_title_no_content_uses_document_fallback(self, valid_auth):
+        result = create_pdf()
+        assert "сохранён" in result
+
+    def test_empty_title_with_content_uses_content_as_title(self, valid_auth):
+        result = create_pdf(title="", content="Краткий отчёт")
+        assert "сохранён" in result
+
+    def test_empty_title_no_content_uses_document_fallback(self, valid_auth):
         result = create_pdf(title="", author="No Title")
-        assert "Ошибка валидации" in result or "422" in result
+        assert "сохранён" in result
 
 
 class TestAuthError:
