@@ -1,0 +1,54 @@
+{
+  "dialogue_session_id": "dialogues/default/session_20260316T091016Z_inception_mercury-coder.json",
+  "created_at": "2026-03-16T09:34:39Z",
+  "model": "inception/mercury-coder",
+  "base_url": "https://routerai.ru/api/v1",
+  "system_prompt": null,
+  "initial_prompt": null,
+  "messages": [
+    {
+      "role": "user",
+      "content": " создай напоминание с заданием которое через 1 минуту: Посмотри погоду в Питере, Москве и Казани,оформи результаты в PDF и сохрани как файл на диск.",
+      "tokens": null,
+      "tool_call_id": null
+    },
+    {
+      "role": "tool",
+      "content": "Напоминание 04aa6128-c723-4e1f-ad47-83e9104f63a5:\n  Описание: Посмотри погоду в Питере, Москве и Казани,оформи результаты в PDF и сохрани как файл на диск.\n  Статус: pending\n  Задержка: 60 сек.\n  Создано: 2026-03-16T09:10:38.800868Z\n  Сработает в: 2026-03-16T09:11:38.800868Z",
+      "tokens": null,
+      "tool_call_id": "chatcmpl-tool-0a60c29d0e9a4f61824c32ff1894275d"
+    },
+    {
+      "role": "assistant",
+      "content": "✅ Напоминание создано.\n\n**Описание:** Посмотри погоду в Питере, Москве и Казани, оформь результаты в PDF и сохрани как файл на диск.  \n**Время срабатывания:** через 1 минуту (2026‑03‑16 09:11:38 UTC).",
+      "tokens": {
+        "prompt": 251,
+        "completion": 68,
+        "total": 319
+      },
+      "tool_call_id": null
+    }
+  ],
+  "context_summary": "",
+  "turns": 2,
+  "last_user_input": null,
+  "last_assistant_content": null,
+  "duration_seconds": 1462.8918979167938,
+  "total_tokens": 319,
+  "total_prompt_tokens": 251,
+  "total_completion_tokens": 68,
+  "requests": [],
+  "context_strategy": "sliding_window",
+  "sticky_facts": {},
+  "branches": [],
+  "active_branch_id": null,
+  "active_task_id": null,
+  "active_task_ids": [],
+  "active_project_id": null,
+  "agent_mode": {
+    "enabled": false,
+    "invariants": [],
+    "max_retries": 3
+  },
+  "plan_dialog_state": null
+}

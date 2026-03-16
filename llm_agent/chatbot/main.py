@@ -5,8 +5,11 @@ from datetime import datetime
 import json
 import logging
 import os
+import queue
 import re
+import sys
 import time
+import threading
 from typing import Any, Dict, List, Optional
 import uuid
 
@@ -2313,26 +2316,73 @@ def _get_active_messages(state: SessionState) -> List[ChatMessage]:
 # ---------------------------------------------------------------------------
 
 
-def _start_notification_watcher(notification_server: "NotificationServer", state: "SessionState") -> None:
+def _read_input_or_auto(auto_queue: queue.Queue, prompt: str = "> ") -> tuple:
+    """Читает ввод из stdin или авто-задание из очереди.
+
+    Возвращает (text, is_auto): is_auto=True если сообщение пришло из очереди напоминаний.
+    Кросс-платформенно: на Unix использует select, на Windows — поток-читалку stdin.
+    """
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+    try:
+        import select as _select
+        while True:
+            try:
+                msg = auto_queue.get_nowait()
+                sys.stdout.write(f"\n[⚙ Авто-задание из напоминания]: {msg}\n")
+                sys.stdout.flush()
+                return msg, True
+            except queue.Empty:
+                pass
+            r, _, _ = _select.select([sys.stdin], [], [], 0.5)
+            if r:
+                return sys.stdin.readline().rstrip('\n'), False
+    except (ImportError, OSError):
+        # Windows fallback: читаем stdin в отдельном потоке + опрашиваем очередь
+        result: queue.Queue = queue.Queue()
+        threading.Thread(
+            target=lambda: result.put(sys.stdin.readline().rstrip('\n')),
+            daemon=True,
+        ).start()
+        while True:
+            try:
+                msg = auto_queue.get_nowait()
+                sys.stdout.write(f"\n[⚙ Авто-задание из напоминания]: {msg}\n")
+                sys.stdout.flush()
+                return msg, True
+            except queue.Empty:
+                pass
+            try:
+                return result.get(timeout=0.5), False
+            except queue.Empty:
+                pass
+
+
+def _start_notification_watcher(
+    notification_server: "NotificationServer",
+    state: "SessionState",
+    auto_execute_queue: queue.Queue,
+) -> None:
     """Запускает daemon-поток, который немедленно печатает уведомления из очереди.
 
-    При получении уведомления автоматически обновляет файл reminders.json.
+    При получении уведомления автоматически обновляет файл reminders.json
+    и помещает описание напоминания в auto_execute_queue для авто-выполнения.
     """
-    import sys
-    import threading
-
     def _watcher() -> None:
         while True:
             notes = notification_server.check_notifications()
             for note in notes:
                 sys.stdout.write(f"\r\n⏰ {note}\n> ")
                 sys.stdout.flush()
-                match = re.search(r'\(id=([^)]+)\)', note)
-                if match:
-                    task_id = match.group(1)
+                match_id = re.search(r'\(id=([^)]+)\)', note)
+                if match_id:
+                    task_id = match_id.group(1)
                     reminder = fetch_reminder(task_id)
                     if reminder:
                         update_reminder_in_file(reminder, state.profile_name)
+                match_desc = re.search(r'Описание: (.+?) \(id=', note)
+                if match_desc:
+                    auto_execute_queue.put(match_desc.group(1).strip())
             time.sleep(0.5)
 
     t = threading.Thread(target=_watcher, daemon=True)
@@ -2417,11 +2467,12 @@ def main() -> None:
 
     # Webhook notification server
     _notification_server: Optional[NotificationServer] = None
+    _auto_execute_queue: queue.Queue = queue.Queue()
     try:
         _notification_server = NotificationServer()
         _notification_server.start()
         print(f"[Webhook: {_notification_server.get_url()}]")
-        _start_notification_watcher(_notification_server, state)
+        _start_notification_watcher(_notification_server, state, _auto_execute_queue)
     except OSError as exc:
         print(f"[Webhook: не удалось запустить ({exc}). Push-уведомления отключены.]")
 
@@ -2471,7 +2522,7 @@ def main() -> None:
 
     while True:
         try:
-            user_input = input("> ")
+            user_input, _is_auto = _read_input_or_auto(_auto_execute_queue)
         except (KeyboardInterrupt, EOFError):
             print()
             break

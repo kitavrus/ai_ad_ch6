@@ -1,7 +1,4 @@
-import json
 import os
-
-from json_repair import repair_json
 
 import httpx
 from dotenv import load_dotenv
@@ -20,28 +17,42 @@ _SAVE_HEADERS = {"X-API-Key": SAVE_API_KEY} if SAVE_API_KEY else {}
 
 
 @mcp.tool()
-def create_pdf(document_json: str) -> str:
-    """Создаёт PDF из JSON-документа и автоматически сохраняет его на диск.
+def create_pdf(
+    title: str,
+    content: str | None = None,
+    sections: list | None = None,
+    author: str | None = None,
+    file_path: str | None = None,
+) -> str:
+    """Создаёт PDF-документ и автоматически сохраняет его на диск.
 
-    document_json — JSON-строка со структурой:
-    {"title": "...", "author": "...", "sections": [...]}
+    title   — заголовок документа, например "Отчёт за март"
+    content — простой текстовый контент (необязательно). Если указан, будет добавлен
+              как секция без заголовка. Удобно для быстрого создания PDF из текста.
+    author  — автор документа (необязательно), например "Иван Иванов"
+    sections — список секций (необязательно). Каждая секция — dict с полями:
+        - heading: str          — заголовок секции
+        - content: str          — текстовый параграф
+        - items: list[str]      — маркированный список строк
+        - table: {"headers": [...], "rows": [[...]]}  — таблица
+    file_path — игнорируется (путь сохранения управляется сервером автоматически)
 
-    Каждая секция может содержать:
-    - heading: заголовок секции
-    - content: текстовый параграф
-    - items: список строк (маркированный список)
-    - table: {"headers": [...], "rows": [[...]]}
+    Пример:
+        create_pdf(title="Отчёт", content="Текст отчёта...")
+        create_pdf(
+            title="Мой документ",
+            author="Автор",
+            sections=[{"heading": "Введение", "content": "Текст..."}],
+        )
 
     Возвращает путь к сохранённому файлу на диске.
     """
     try:
-        try:
-            repaired = repair_json(document_json.strip(), return_objects=True)
-            if not isinstance(repaired, dict):
-                return f"Ошибка разбора JSON: ожидался объект, получено {type(repaired).__name__}"
-            payload = repaired
-        except Exception as exc:
-            return f"Ошибка разбора JSON: {exc}"
+        # Build sections list: prepend plain content if provided
+        built_sections = list(sections or [])
+        if content:
+            built_sections.insert(0, {"content": content})
+        payload = {"title": title, "sections": built_sections, "author": author}
 
         response = httpx.post(
             f"{BASE_URL}/pdf",

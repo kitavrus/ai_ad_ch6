@@ -1,0 +1,112 @@
+{
+  "dialogue_session_id": "dialogues/default/session_20260316T093526Z_inception_mercury-coder.json",
+  "created_at": "2026-03-16T10:07:24Z",
+  "model": "inception/mercury-coder",
+  "base_url": "https://routerai.ru/api/v1",
+  "system_prompt": null,
+  "initial_prompt": null,
+  "messages": [
+    {
+      "role": "user",
+      "content": " создай напоминание с заданием которое через 1 минуту: Посмотри погоду в Питере, Москве и Казани,оформи результаты в PDF и сохрани как файл на диск.",
+      "tokens": null,
+      "tool_call_id": null
+    },
+    {
+      "role": "tool",
+      "content": "Напоминание 3b5843e5-2e0c-4776-a3f4-5384568e2eb6:\n  Описание: Посмотри погоду в Питере, Москве и Казани,оформи результаты в PDF и сохрани как файл на диск.\n  Статус: pending\n  Задержка: 60 сек.\n  Создано: 2026-03-16T09:35:36.918999Z\n  Сработает в: 2026-03-16T09:36:36.918999Z",
+      "tokens": null,
+      "tool_call_id": "chatcmpl-tool-1020cd3e62e043ea8bee80c166e65966"
+    },
+    {
+      "role": "assistant",
+      "content": "✅ Напоминание создано.\n\n**Описание:** Посмотри погоду в Питере, Москве и Казани, оформь результаты в PDF и сохрани как файл на диск.\n\n**Время срабатывания:** через 1 минуту (09:36:36 UTC).",
+      "tokens": {
+        "prompt": 247,
+        "completion": 58,
+        "total": 305
+      },
+      "tool_call_id": null
+    },
+    {
+      "role": "user",
+      "content": "Посмотри погоду в Питере, Москве и Казани,оформи результаты в PDF и сохрани как файл на диск.",
+      "tokens": null,
+      "tool_call_id": null
+    },
+    {
+      "role": "tool",
+      "content": "Погода в Санкт-Петербург:\n  Температура: -1°C\n  Состояние: Пасмурно, лёгкий снег\n  Влажность: 85%\n  Ветер: 8 м/с, З",
+      "tokens": null,
+      "tool_call_id": "chatcmpl-tool-5a607fa7bfc043f296f12232f6029d50"
+    },
+    {
+      "role": "tool",
+      "content": "Погода в Москва:\n  Температура: -3°C\n  Состояние: Облачно, небольшой снег\n  Влажность: 80%\n  Ветер: 5 м/с, С",
+      "tokens": null,
+      "tool_call_id": "chatcmpl-tool-f1a6047f1e2e45bb90869d012e258e15"
+    },
+    {
+      "role": "tool",
+      "content": "Погода в Казань:\n  Температура: -8°C\n  Состояние: Снегопад\n  Влажность: 88%\n  Ветер: 7 м/с, З",
+      "tokens": null,
+      "tool_call_id": "chatcmpl-tool-99c11105fa594304a9e66cf5f5ca9019"
+    },
+    {
+      "role": "tool",
+      "content": "Error executing tool create_pdf: 1 validation error for create_pdfArguments\ndocument_json\n  Field required [type=missing, input_value={'content': 'Погода... Ветер: 7 м/с\\n'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/missing",
+      "tokens": null,
+      "tool_call_id": "chatcmpl-tool-cc50f5d160f14d38a78bba16985b1a64"
+    },
+    {
+      "role": "tool",
+      "content": "Error executing tool create_pdf: 1 validation error for create_pdfArguments\ndocument_json\n  Field required [type=missing, input_value={}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/missing",
+      "tokens": null,
+      "tool_call_id": "chatcmpl-tool-796e32a3a9fd49a491f7a4889dbb8c12"
+    },
+    {
+      "role": "tool",
+      "content": "Error executing tool create_pdf: 1 validation error for create_pdfArguments\ndocument_json\n  Field required [type=missing, input_value={}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.12/v/missing",
+      "tokens": null,
+      "tool_call_id": "chatcmpl-tool-1dd1cfd271c145efbe45ea7b85d51e3d"
+    },
+    {
+      "role": "tool",
+      "content": "PDF создан и сохранён: /private/tmp/saved_files/weather_report.pdf (10276 байт)",
+      "tokens": null,
+      "tool_call_id": "chatcmpl-tool-3e9284adee784c65988b65b919550f67"
+    },
+    {
+      "role": "assistant",
+      "content": "✅ PDF файл создан и сохранён.\n\n**Файл:** `/private/tmp/saved_files/weather_report.pdf`\n\nСодержимое PDF:\n\n```\nПогода в Санкт-Петербурге:\n- Температура: -1°C\n- Состояние: Пасмурно, лёгкий снег\n- Влажность: 85%\n- Ветер: 8 м/с\n\nПогода в Москве:\n- Температура: -3°C\n- Состояние: Облачно, небольшой снег\n- Влажность: 80%\n- Ветер: 5 м/с\n\nПогода в Казани:\n- Температура: -8°C\n- Состояние: Снегопад\n- Влажность: 88%\n- Ветер: 7 м/с\n```\n\nЕсли нужно что-то изменить или добавить, дайте знать!",
+      "tokens": {
+        "prompt": 1512,
+        "completion": 182,
+        "total": 1694
+      },
+      "tool_call_id": null
+    }
+  ],
+  "context_summary": "",
+  "turns": 4,
+  "last_user_input": null,
+  "last_assistant_content": null,
+  "duration_seconds": 1917.6086611747742,
+  "total_tokens": 1999,
+  "total_prompt_tokens": 1759,
+  "total_completion_tokens": 240,
+  "requests": [],
+  "context_strategy": "sliding_window",
+  "sticky_facts": {},
+  "branches": [],
+  "active_branch_id": null,
+  "active_task_id": null,
+  "active_task_ids": [],
+  "active_project_id": null,
+  "agent_mode": {
+    "enabled": false,
+    "invariants": [],
+    "max_retries": 3
+  },
+  "plan_dialog_state": null
+}

@@ -101,11 +101,12 @@ def test_invalid_json_returns_400(server: NotificationServer):
 
 
 def test_watcher_prints_notification_immediately(server, capsys):
+    import queue
     from unittest.mock import MagicMock
     from llm_agent.chatbot.main import _start_notification_watcher
     mock_state = MagicMock()
     mock_state.profile_name = "default"
-    _start_notification_watcher(server, mock_state)
+    _start_notification_watcher(server, mock_state, queue.Queue())
     _post(server.get_url(), {"id": "z1", "description": "тест фона", "delay_seconds": 30})
     time.sleep(1.0)  # даём вотчеру проснуться (0.5s poll) и напечатать
     captured = capsys.readouterr().out

@@ -1069,3 +1069,105 @@ class TestApplyInlineUpdatesExtra:
         original_model = state.model
         _apply_inline_updates({"model": None}, state)
         assert state.model == original_model
+
+
+# ---------------------------------------------------------------------------
+# Тесты _read_input_or_auto и _start_notification_watcher
+# ---------------------------------------------------------------------------
+
+class TestReadInputOrAuto:
+    def test_returns_from_queue_when_stdin_not_ready(self, monkeypatch, capsys):
+        """Если select говорит stdin не готов, а в очереди есть сообщение — возвращает (msg, True)."""
+        import queue as _queue
+        import sys
+        from llm_agent.chatbot.main import _read_input_or_auto
+
+        auto_q = _queue.Queue()
+        auto_q.put("test task from reminder")
+
+        # select.select всегда возвращает пустой список (stdin не готов)
+        with patch("select.select", return_value=([], [], [])):
+            result = _read_input_or_auto(auto_q, prompt="")
+
+        assert result == ("test task from reminder", True)
+        captured = capsys.readouterr()
+        assert "[⚙ Авто-задание из напоминания]: test task from reminder" in captured.out
+
+    def test_returns_from_stdin_when_ready(self, monkeypatch):
+        """Если select говорит stdin готов — читает строку и возвращает (text, False)."""
+        import queue as _queue
+        import sys
+        from llm_agent.chatbot.main import _read_input_or_auto
+
+        auto_q = _queue.Queue()  # пустая очередь
+
+        with patch("select.select", return_value=([sys.stdin], [], [])), \
+             patch.object(sys.stdin, "readline", return_value="hello\n"):
+            result = _read_input_or_auto(auto_q, prompt="")
+
+        assert result == ("hello", False)
+
+    def test_queue_takes_priority_over_stdin(self, monkeypatch, capsys):
+        """Очередь проверяется до select — сообщение возвращается сразу."""
+        import queue as _queue
+        from llm_agent.chatbot.main import _read_input_or_auto
+
+        auto_q = _queue.Queue()
+        auto_q.put("priority msg")
+
+        select_called = []
+
+        def fake_select(*args, **kwargs):
+            select_called.append(True)
+            return ([], [], [])
+
+        with patch("select.select", side_effect=fake_select):
+            result = _read_input_or_auto(auto_q, prompt="")
+
+        assert result == ("priority msg", True)
+        # select не должен был вызваться — очередь дала ответ раньше
+        assert len(select_called) == 0
+
+
+class TestNotificationWatcherQueuesDescription:
+    def test_watcher_puts_description_in_queue(self, monkeypatch):
+        """Если note содержит 'Описание: X (id=Y)', X попадает в auto_execute_queue."""
+        import queue as _queue
+        import time
+        from unittest.mock import MagicMock
+        from llm_agent.chatbot.main import _start_notification_watcher
+
+        auto_q = _queue.Queue()
+        state = _make_state()
+
+        note = "Сработало напоминание: Описание: test task (id=abc123)"
+        notification_server = MagicMock()
+        # Первый вызов возвращает note, все последующие — пустой список
+        notification_server.check_notifications.side_effect = [[note], [], [], []]
+
+        with patch("llm_agent.chatbot.main.fetch_reminder", return_value=None):
+            _start_notification_watcher(notification_server, state, auto_q)
+            # Ждём чуть больше одного цикла вотчера (sleep 0.5)
+            time.sleep(0.7)
+
+        assert auto_q.get_nowait() == "test task"
+
+    def test_watcher_skips_queue_if_no_description(self, monkeypatch):
+        """Если в note нет 'Описание: ...', очередь остаётся пустой."""
+        import queue as _queue
+        import time
+        from unittest.mock import MagicMock
+        from llm_agent.chatbot.main import _start_notification_watcher
+
+        auto_q = _queue.Queue()
+        state = _make_state()
+
+        note = "Сработало напоминание без описания (id=abc123)"
+        notification_server = MagicMock()
+        notification_server.check_notifications.side_effect = [[note], [], [], []]
+
+        with patch("llm_agent.chatbot.main.fetch_reminder", return_value=None):
+            _start_notification_watcher(notification_server, state, auto_q)
+            time.sleep(0.7)
+
+        assert auto_q.empty()
