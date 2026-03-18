@@ -838,3 +838,32 @@ def build_context_by_strategy(
         return build_context_sliding_window(messages, context_summary, recent_n)
 
     return build_context_sliding_window(messages, context_summary, recent_n)
+
+
+# ===========================================================================
+# RAG: форматирование контекста из чанков
+# ===========================================================================
+
+
+def build_rag_system_addition(chunks: list) -> str:
+    """Форматирует найденные RAG-чанки в системное дополнение для LLM.
+
+    Args:
+        chunks: List[ChunkMetadata] — результат поиска RAGRetriever.
+
+    Returns:
+        Строка для вставки в системное сообщение.
+    """
+    if not chunks:
+        return ""
+    lines = ["[RAG-контекст]"]
+    for chunk in chunks:
+        source = chunk.source
+        section = chunk.section or ""
+        header = f"Источник: {source}"
+        if section:
+            header += f" §{section}"
+        lines.append(header)
+        lines.append(chunk.text)
+        lines.append("")
+    return "\n".join(lines).strip()

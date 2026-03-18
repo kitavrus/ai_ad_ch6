@@ -32,6 +32,14 @@ class AgentMode(BaseModel):
     max_retries: int = Field(default=3, ge=1, le=10)
 
 
+class RagMode(BaseModel):
+    """Конфигурация RAG-режима (Retrieval-Augmented Generation)."""
+
+    enabled: bool = False
+    strategy: str = "structure"   # "fixed" | "structure"
+    top_k: int = 3
+
+
 # ---------------------------------------------------------------------------
 # Система управления задачами (Task Planning State Machine)
 # ---------------------------------------------------------------------------
@@ -360,6 +368,7 @@ class SessionState(BaseModel):
     active_task_ids: List[str] = Field(default_factory=list)
     active_project_id: Optional[str] = None
     agent_mode: AgentMode = Field(default_factory=AgentMode)
+    rag_mode: RagMode = Field(default_factory=RagMode)
     plan_dialog_state: Optional[str] = None
     plan_draft_steps: List[dict] = Field(default_factory=list)
     plan_draft_description: str = ""

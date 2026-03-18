@@ -1171,3 +1171,89 @@ class TestNotificationWatcherQueuesDescription:
             time.sleep(0.7)
 
         assert auto_q.empty()
+
+
+# ---------------------------------------------------------------------------
+# /rag команды
+# ---------------------------------------------------------------------------
+
+class TestHandleRagCommand:
+    """Тесты для _handle_rag_command."""
+
+    def test_handle_rag_on(self, capsys):
+        from llm_agent.chatbot.main import _handle_rag_command
+        state = _make_state()
+        assert state.rag_mode.enabled is False
+        _handle_rag_command("on", "", state)
+        assert state.rag_mode.enabled is True
+        out = capsys.readouterr().out
+        assert "включён" in out
+
+    def test_handle_rag_off(self, capsys):
+        from llm_agent.chatbot.main import _handle_rag_command
+        state = _make_state()
+        state.rag_mode.enabled = True
+        _handle_rag_command("off", "", state)
+        assert state.rag_mode.enabled is False
+        out = capsys.readouterr().out
+        assert "выключен" in out
+
+    def test_handle_rag_status_off(self, capsys):
+        from llm_agent.chatbot.main import _handle_rag_command
+        state = _make_state()
+        _handle_rag_command("status", "", state)
+        out = capsys.readouterr().out
+        assert "выключен" in out
+
+    def test_handle_rag_status_on(self, capsys):
+        from llm_agent.chatbot.main import _handle_rag_command
+        state = _make_state()
+        state.rag_mode.enabled = True
+        _handle_rag_command("status", "", state)
+        out = capsys.readouterr().out
+        assert "включён" in out
+
+    def test_handle_rag_strategy_fixed(self, capsys):
+        from llm_agent.chatbot.main import _handle_rag_command
+        state = _make_state()
+        _handle_rag_command("strategy", "fixed", state)
+        assert state.rag_mode.strategy == "fixed"
+        out = capsys.readouterr().out
+        assert "fixed" in out
+
+    def test_handle_rag_strategy_structure(self, capsys):
+        from llm_agent.chatbot.main import _handle_rag_command
+        state = _make_state()
+        _handle_rag_command("strategy", "structure", state)
+        assert state.rag_mode.strategy == "structure"
+
+    def test_handle_rag_strategy_invalid(self, capsys):
+        from llm_agent.chatbot.main import _handle_rag_command
+        state = _make_state()
+        _handle_rag_command("strategy", "unknown", state)
+        assert state.rag_mode.strategy == "structure"  # unchanged
+        out = capsys.readouterr().out
+        assert "Неизвестная стратегия" in out
+
+    def test_handle_rag_topk(self, capsys):
+        from llm_agent.chatbot.main import _handle_rag_command
+        state = _make_state()
+        _handle_rag_command("topk", "5", state)
+        assert state.rag_mode.top_k == 5
+        out = capsys.readouterr().out
+        assert "5" in out
+
+    def test_handle_rag_topk_invalid(self, capsys):
+        from llm_agent.chatbot.main import _handle_rag_command
+        state = _make_state()
+        _handle_rag_command("topk", "abc", state)
+        assert state.rag_mode.top_k == 3  # unchanged default
+        out = capsys.readouterr().out
+        assert "требует целое число" in out
+
+    def test_handle_rag_unknown_action(self, capsys):
+        from llm_agent.chatbot.main import _handle_rag_command
+        state = _make_state()
+        _handle_rag_command("badcmd", "", state)
+        out = capsys.readouterr().out
+        assert "Неизвестная подкоманда rag" in out

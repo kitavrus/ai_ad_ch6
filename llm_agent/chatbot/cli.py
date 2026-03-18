@@ -179,6 +179,14 @@ def parse_inline_command(line: str) -> dict:
         # Для остальных /mem* команд — пропускаем, они разберутся ниже через key-нормализацию
         return {}
 
+    # Специальная обработка /rag
+    if _first_word == "rag":
+        _rest = payload[len("rag"):].strip()
+        _parts = _rest.split(None, 1)
+        _sub = _parts[0].lower() if _parts else "status"
+        _arg = _parts[1].strip() if len(_parts) > 1 else ""
+        return {"rag": {"action": _sub, "arg": _arg}}
+
     # Специальная обработка /invariant
     if _first_word == "invariant":
         _rest = payload[len("invariant"):].strip()

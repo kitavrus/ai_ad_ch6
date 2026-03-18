@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="b35a12be-6e10-48e6-a4fd-76dfb149614a" name="Changes" comment="day 21 RAG" />
+    <list default="true" id="b35a12be-6e10-48e6-a4fd-76dfb149614a" name="Changes" comment="day 21 RAG+README.md">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/llm_agent/chatbot/cli.py" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent/chatbot/cli.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/llm_agent/chatbot/context.py" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent/chatbot/context.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/llm_agent/chatbot/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent/chatbot/main.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/llm_agent/chatbot/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent/chatbot/models.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/llm_agent/tests/test_main_helpers.py" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent/tests/test_main_helpers.py" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -82,7 +89,7 @@
       <command value="погода_в_россии_2026_03_12.pdf" />
     </option>
   </component>
-  <component name="RunManager" selected="Python tests.pytest in test_save.py">
+  <component name="RunManager" selected="Python.script">
     <configuration name="pdf_server" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="ai_ad_ch6" />
       <option name="ENV_FILES" value="" />
@@ -270,7 +277,7 @@
       <updated>1773129201603</updated>
       <workItem from="1773129203206" duration="13229000" />
       <workItem from="1773297476218" duration="3431000" />
-      <workItem from="1773673207419" duration="5980000" />
+      <workItem from="1773673207419" duration="7574000" />
     </task>
     <task id="LOCAL-00001" summary="day 16 MCP">
       <option name="closed" value="true" />
@@ -336,7 +343,15 @@
       <option name="project" value="LOCAL" />
       <updated>1773728756545</updated>
     </task>
-    <option name="localTasksCounter" value="9" />
+    <task id="LOCAL-00009" summary="day 21 RAG+README.md">
+      <option name="closed" value="true" />
+      <created>1773729384975</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1773729384975</updated>
+    </task>
+    <option name="localTasksCounter" value="10" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -350,7 +365,8 @@
     <MESSAGE value="day 20" />
     <MESSAGE value="day 20 + readme" />
     <MESSAGE value="day 21 RAG" />
-    <option name="LAST_COMMIT_MESSAGE" value="day 21 RAG" />
+    <MESSAGE value="day 21 RAG+README.md" />
+    <option name="LAST_COMMIT_MESSAGE" value="day 21 RAG+README.md" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/ai_ad_ch6$main__1_.coverage" NAME="main (1) Coverage Results" MODIFIED="1773656293326" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/api_for_mcp/scheduler" />

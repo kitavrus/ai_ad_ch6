@@ -39,6 +39,7 @@ from llm_agent.chatbot.context import (
     build_builder_step_prompt,
     build_context_by_strategy,
     build_plan_dialog_prompt,
+    build_rag_system_addition,
     create_branch,
     create_checkpoint,
     extract_facts_from_llm,
@@ -71,6 +72,7 @@ from llm_agent.chatbot.models import (
     ContextStrategy,
     DialogueSession,
     Project,
+    RagMode,
     RequestMetric,
     SessionState,
     StepStatus,
@@ -114,6 +116,21 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _MSG_NO_ACTIVE_TASK = "[Нет активной задачи]"
+
+# ---------------------------------------------------------------------------
+# RAG — глобальный синглтон ретривера (lazy init)
+# ---------------------------------------------------------------------------
+
+_retriever: Optional[Any] = None
+
+
+def _get_retriever() -> Any:
+    """Возвращает синглтон RAGRetriever (инициализируется при первом вызове)."""
+    global _retriever
+    if _retriever is None:
+        from llm_agent.rag.retriever import RAGRetriever
+        _retriever = RAGRetriever()
+    return _retriever
 _MEMCLEAR_LABELS: dict = {
     "short": "краткосрочная",
     "short_term": "краткосрочная",
@@ -1215,6 +1232,37 @@ def _handle_invariant_command(action: str, arg: str, state: SessionState) -> Non
         print(f"[Неизвестная подкоманда invariant: {action!r}. Доступны: add, del, edit, list, clear]")
 
 
+def _handle_rag_command(action: str, arg: str, state: SessionState) -> None:
+    """Диспетчер команды /rag on|off|status|strategy|topk."""
+    if action in ("on", "enable"):
+        state.rag_mode.enabled = True
+        print(f"[RAG включён. Стратегия: {state.rag_mode.strategy}, top_k: {state.rag_mode.top_k}]")
+    elif action in ("off", "disable"):
+        state.rag_mode.enabled = False
+        print("[RAG выключен]")
+    elif action == "status":
+        status = "включён" if state.rag_mode.enabled else "выключен"
+        print(f"[RAG {status}. Стратегия: {state.rag_mode.strategy}, top_k: {state.rag_mode.top_k}]")
+    elif action == "strategy":
+        allowed = ("fixed", "structure")
+        if arg in allowed:
+            state.rag_mode.strategy = arg
+            print(f"[RAG стратегия: {arg}]")
+        else:
+            print(f"[Неизвестная стратегия: {arg!r}. Доступны: fixed, structure]")
+    elif action == "topk":
+        try:
+            n = int(arg)
+            if n < 1:
+                raise ValueError
+            state.rag_mode.top_k = n
+            print(f"[RAG top_k: {n}]")
+        except (ValueError, TypeError):
+            print(f"[/rag topk требует целое число >= 1, получено: {arg!r}]")
+    else:
+        print(f"[Неизвестная подкоманда rag: {action!r}. Доступны: on, off, status, strategy, topk]")
+
+
 def _handle_project_command(action: str, arg: str, state: SessionState, client: Optional[OpenAI] = None) -> None:
     """Диспетчер команды /project."""
     if action == "new":
@@ -2107,6 +2155,8 @@ def _apply_inline_updates(
             _handle_mcp_command(value["action"], value.get("arg", ""), mcp_client)
         elif key == "reminders" and isinstance(value, dict):
             _handle_reminders_command(value["action"], value.get("arg"), state)
+        elif key == "rag" and isinstance(value, dict):
+            _handle_rag_command(value["action"], value.get("arg", ""), state)
 
         elif key == "profile" and isinstance(value, dict):
             _profile_action = value.get("action", "show")
@@ -2518,6 +2568,7 @@ def main() -> None:
     print("           /task done  /task fail [причина]  /task load <id>  /task delete <id>")
     print("Агент:     /plan on|off|status  /plan retries <n>  /plan builder")
     print("           /invariant add <текст>  /invariant del <n>  /invariant list  /invariant clear")
+    print("RAG:       /rag on|off|status  /rag strategy fixed|structure  /rag topk <n>")
     print("MCP:       /mcp status  /mcp tools  /mcp reconnect\n")
 
     while True:
@@ -2551,7 +2602,7 @@ def main() -> None:
                         "settask", "setpref", "remember",
                         "profile", "task",
                         "plan", "invariant",
-                        "mcp",
+                        "mcp", "rag",
                     )
                 ):
                     print(f"Updated config: {updates}")
@@ -2649,6 +2700,21 @@ def main() -> None:
                     }
                 else:
                     api_messages.insert(0, {"role": "system", "content": _profile_text})
+
+        # RAG-обогащение контекста перед API-запросом
+        if state.rag_mode.enabled:
+            try:
+                _rag_chunks = _get_retriever().search(
+                    user_input, state.rag_mode.strategy, state.rag_mode.top_k
+                )
+                if _rag_chunks:
+                    from pathlib import Path as _Path
+                    _sources = {_Path(c.source).name for c in _rag_chunks}
+                    print(f"[RAG] Найдено {len(_rag_chunks)} чанк(ов) из: {', '.join(sorted(_sources))}")
+                    _rag_addition = build_rag_system_addition(_rag_chunks)
+                    api_messages.append({"role": "system", "content": _rag_addition})
+            except Exception as _rag_exc:
+                print(f"[RAG] Ошибка поиска: {_rag_exc}")
 
         # Выполняем API-запрос
         try:
