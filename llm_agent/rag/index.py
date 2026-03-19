@@ -2,7 +2,7 @@
 
 import json
 from pathlib import Path
-from typing import List
+from typing import List, Tuple
 
 import faiss
 import numpy as np
@@ -34,6 +34,21 @@ class FAISSIndex:
         k = min(top_k, len(self._chunks))
         _, indices = self._index.search(query, k)
         return [self._chunks[i] for i in indices[0] if i < len(self._chunks)]
+
+    def search_with_scores(
+        self, query_embedding: np.ndarray, top_k: int = 5
+    ) -> List[Tuple[ChunkMetadata, float]]:
+        """Return top_k chunks with their raw L2 distances."""
+        if self._index is None:
+            raise RuntimeError("Index is empty. Call build() or load() first.")
+        query = query_embedding.reshape(1, -1).astype(np.float32)
+        k = min(top_k, len(self._chunks))
+        distances, indices = self._index.search(query, k)
+        return [
+            (self._chunks[i], float(distances[0][pos]))
+            for pos, i in enumerate(indices[0])
+            if i < len(self._chunks)
+        ]
 
     def save(self, path: str) -> None:
         """Save the FAISS index and metadata sidecar to disk."""

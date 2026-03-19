@@ -38,6 +38,10 @@ class RagMode(BaseModel):
     enabled: bool = False
     strategy: str = "structure"   # "fixed" | "structure"
     top_k: int = 3
+    threshold: float = 0.0        # 0.0 = нет фильтрации
+    top_k_before: int = 0         # 0 = использовать top_k
+    top_k_after: int = 0          # 0 = использовать top_k
+    rewrite_query: bool = False
 
 
 # ---------------------------------------------------------------------------

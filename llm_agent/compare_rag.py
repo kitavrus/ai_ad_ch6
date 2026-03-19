@@ -1,7 +1,8 @@
-"""Скрипт сравнения ответов LLM с RAG и без RAG.
+"""Скрипт сравнения ответов LLM в четырёх режимах RAG.
 
 Запуск:
     python compare_rag.py --output rag_comparison_report.md
+    python compare_rag.py --modes A,B,C --output report.md
 """
 
 import argparse
@@ -115,9 +116,21 @@ QUESTIONS = [
 
 DIVIDER = "─" * 50
 
+# ---------------------------------------------------------------------------
+# Mode definitions
+# ---------------------------------------------------------------------------
+
+ALL_MODES = ["A", "B", "C", "D"]
+
+MODE_LABELS = {
+    "A": "No RAG (baseline)",
+    "B": "RAG, no filter/rewrite",
+    "C": "RAG + relevance filter (threshold=0.5, top_k_before=10, top_k_after=3)",
+    "D": "RAG + filter + query rewrite",
+}
+
 
 def ask_llm(client: OpenAI, model: str, system: str, question: str) -> str:
-    """Задаёт вопрос LLM и возвращает текст ответа."""
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
@@ -131,7 +144,47 @@ def ask_llm(client: OpenAI, model: str, system: str, question: str) -> str:
     return response.choices[0].message.content or ""
 
 
-def run_comparison(output: str) -> None:
+def _build_retrievers(modes: list, llm_client: OpenAI):
+    """Build RAGRetriever instances for modes B/C/D."""
+    from llm_agent.rag.retriever import RAGRetriever
+
+    retrievers = {}
+    if "B" in modes:
+        retrievers["B"] = RAGRetriever()
+    if "C" in modes:
+        retrievers["C"] = RAGRetriever(
+            relevance_threshold=0.5,
+            top_k_before=10,
+            top_k_after=3,
+        )
+    if "D" in modes:
+        retrievers["D"] = RAGRetriever(
+            relevance_threshold=0.5,
+            top_k_before=10,
+            top_k_after=3,
+            rewrite_query=True,
+            llm_client=llm_client,
+        )
+    return retrievers
+
+
+def _rag_answer(client: OpenAI, model: str, retriever, question: str) -> tuple[str, str, str]:
+    """Return (answer, chunk_sources, rewritten_query)."""
+    from llm_agent.chatbot.context import build_rag_system_addition
+
+    results = retriever.search_with_scores(question, strategy="structure", top_k=3)
+    if not results:
+        return "(RAG: индекс пуст)", "(чанки не найдены)", question
+
+    chunks = [r.chunk for r in results]
+    rewritten = results[0].query if results else question
+    rag_system = build_rag_system_addition(chunks)
+    chunk_sources = ", ".join(sorted({Path(c.source).name for c in chunks}))
+    answer = ask_llm(client, model, rag_system, question)
+    return answer, chunk_sources, rewritten
+
+
+def run_comparison(output: str, modes: list[str]) -> None:
     api_key = os.getenv("OPENAI_API_KEY") or os.getenv("API_KEY")
     base_url = os.getenv("OPENAI_BASE_URL")
     model = os.getenv("DEFAULT_MODEL", "inception/mercury-coder")
@@ -145,58 +198,89 @@ def run_comparison(output: str) -> None:
         kwargs["base_url"] = base_url
     client = OpenAI(**kwargs)
 
-    # Загружаем RAG-чанки
+    # Try to load RAG retrievers
+    rag_available = False
+    retrievers: dict = {}
     try:
-        from llm_agent.rag.retriever import RAGRetriever
-        retriever = RAGRetriever()
+        retrievers = _build_retrievers(modes, client)
         rag_available = True
     except Exception as exc:
-        print(f"[Предупреждение] RAGRetriever недоступен: {exc}. Столбец 'С RAG' будет пуст.", file=sys.stderr)
-        rag_available = False
-        retriever = None  # type: ignore[assignment]
+        print(f"[Предупреждение] RAGRetriever недоступен: {exc}. RAG-столбцы будут пусты.", file=sys.stderr)
 
-    lines: list[str] = ["# RAG Comparison Report\n"]
+    # Build header
+    mode_cols = " | ".join(modes)
+    lines: list[str] = [
+        "# RAG Comparison Report\n",
+        f"**Modes:** {', '.join(modes)}\n",
+        "| Mode | Description |",
+        "|------|-------------|",
+    ]
+    for m in modes:
+        lines.append(f"| {m} | {MODE_LABELS[m]} |")
+    lines.append("\n")
+
+    # Per-question results
+    per_mode_answers: dict[str, list[str]] = {m: [] for m in modes}
 
     for i, item in enumerate(QUESTIONS, 1):
         q = item["question"]
         expected = item["expected"]
         sources = item["sources"]
 
-        print(f"[{i}/10] {q}")
+        print(f"[{i}/10] {q[:60]}...")
 
-        # Без RAG
-        answer_no_rag = ask_llm(client, model, "", q)
+        answers: dict[str, str] = {}
+        meta: dict[str, str] = {}
 
-        # С RAG
-        if rag_available and retriever is not None:
-            try:
-                chunks = retriever.search(q, strategy="structure", top_k=3)
-                if chunks:
-                    from llm_agent.chatbot.context import build_rag_system_addition
-                    rag_system = build_rag_system_addition(chunks)
-                    chunk_sources = ", ".join(
-                        sorted({Path(c.source).name for c in chunks})
-                    )
-                    answer_rag = ask_llm(client, model, rag_system, q)
-                else:
-                    chunk_sources = "(чанки не найдены)"
-                    answer_rag = "(RAG: индекс пуст)"
-            except Exception as exc:
-                chunk_sources = f"(ошибка: {exc})"
-                answer_rag = f"(RAG: ошибка поиска: {exc})"
-        else:
-            chunk_sources = "(RAG недоступен)"
-            answer_rag = "(RAG недоступен)"
+        if "A" in modes:
+            answers["A"] = ask_llm(client, model, "", q)
+            meta["A"] = "—"
 
-        block = (
-            f"## Вопрос {i}: {q}\n\n"
-            f"**БЕЗ RAG:**\n{answer_no_rag}\n\n"
-            f"**С RAG:**\n{answer_rag}\n\n"
-            f"**Источники (RAG):** {chunk_sources}\n\n"
-            f"**Ожидание:** {expected}\n\n"
-            f"{DIVIDER}\n"
-        )
-        lines.append(block)
+        for mode in ["B", "C", "D"]:
+            if mode not in modes:
+                continue
+            if rag_available and mode in retrievers:
+                try:
+                    ans, chunk_src, rewritten = _rag_answer(client, model, retrievers[mode], q)
+                    answers[mode] = ans
+                    meta[mode] = f"sources={chunk_src}; query_used={rewritten}"
+                except Exception as exc:
+                    answers[mode] = f"(ошибка: {exc})"
+                    meta[mode] = f"(ошибка: {exc})"
+            else:
+                answers[mode] = "(RAG недоступен)"
+                meta[mode] = "(RAG недоступен)"
+
+        # Accumulate for summary
+        for m in modes:
+            per_mode_answers[m].append(answers.get(m, ""))
+
+        # Build block
+        block_lines = [f"## Вопрос {i}: {q}\n", f"**Ожидание:** {expected}\n"]
+        for m in modes:
+            block_lines.append(f"**Режим {m} ({MODE_LABELS[m]}):**\n{answers.get(m, '')}")
+            if m != "A":
+                block_lines.append(f"*Метаданные:* {meta.get(m, '')}")
+            block_lines.append("")
+        block_lines.append(f"**Источники (эталон):** {sources}\n")
+        block_lines.append(DIVIDER)
+        lines.extend(block_lines)
+
+    # Summary table header
+    lines.append("\n## Сводная таблица\n")
+    header_cols = " | ".join(["**Вопрос**", "**Ожидание**"] + [f"**{m}**" for m in modes])
+    lines.append(f"| {header_cols} |")
+    sep = "|".join(["---"] * (2 + len(modes)))
+    lines.append(f"|{sep}|")
+
+    for i, item in enumerate(QUESTIONS):
+        q_short = item["question"][:40].replace("|", "/") + "..."
+        exp_short = item["expected"][:50].replace("|", "/") + "..."
+        row_cols = [q_short, exp_short] + [
+            (per_mode_answers[m][i][:60].replace("\n", " ").replace("|", "/") + "…")
+            for m in modes
+        ]
+        lines.append("| " + " | ".join(row_cols) + " |")
 
     report = "\n".join(lines)
     output_path = Path(output)
@@ -205,14 +289,24 @@ def run_comparison(output: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Сравнение ответов LLM с RAG и без RAG.")
+    parser = argparse.ArgumentParser(description="Сравнение ответов LLM в четырёх режимах RAG.")
     parser.add_argument(
         "--output",
         default="rag_comparison_report.md",
         help="Путь к выходному файлу (default: rag_comparison_report.md)",
     )
+    parser.add_argument(
+        "--modes",
+        default="A,B,C,D",
+        help="Режимы через запятую: A,B,C,D (default: все четыре)",
+    )
     args = parser.parse_args()
-    run_comparison(args.output)
+    modes = [m.strip().upper() for m in args.modes.split(",") if m.strip()]
+    invalid = [m for m in modes if m not in ALL_MODES]
+    if invalid:
+        print(f"Неизвестные режимы: {invalid}. Допустимые: A, B, C, D", file=sys.stderr)
+        sys.exit(1)
+    run_comparison(args.output, modes)
 
 
 if __name__ == "__main__":

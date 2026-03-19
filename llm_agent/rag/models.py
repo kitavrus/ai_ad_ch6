@@ -22,3 +22,10 @@ class IndexStats(BaseModel):
     max_chars: int
     std_chars: float
     sources: int
+
+
+class RetrievalResult(BaseModel):
+    chunk: ChunkMetadata
+    score: float    # 0..1, higher = better; 1/(1+L2_distance)
+    distance: float # raw L2 from FAISS
+    query: str      # query used (may be rewritten)

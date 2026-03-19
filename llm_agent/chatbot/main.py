@@ -122,14 +122,30 @@ _MSG_NO_ACTIVE_TASK = "[Нет активной задачи]"
 # ---------------------------------------------------------------------------
 
 _retriever: Optional[Any] = None
+_retriever_config: tuple = ()
 
 
-def _get_retriever() -> Any:
-    """Возвращает синглтон RAGRetriever (инициализируется при первом вызове)."""
-    global _retriever
-    if _retriever is None:
+def _get_retriever(rag_mode: Optional[Any] = None) -> Any:
+    """Возвращает RAGRetriever; пересоздаёт при изменении настроек."""
+    global _retriever, _retriever_config
+    if rag_mode is None:
+        config_key: tuple = ()
+    else:
+        config_key = (rag_mode.threshold, rag_mode.top_k_before,
+                      rag_mode.top_k_after, rag_mode.rewrite_query)
+    if _retriever is None or config_key != _retriever_config:
         from llm_agent.rag.retriever import RAGRetriever
-        _retriever = RAGRetriever()
+        kwargs: dict = {}
+        if rag_mode:
+            if rag_mode.threshold > 0:
+                kwargs["relevance_threshold"] = rag_mode.threshold
+            if rag_mode.top_k_before > 0:
+                kwargs["top_k_before"] = rag_mode.top_k_before
+            if rag_mode.top_k_after > 0:
+                kwargs["top_k_after"] = rag_mode.top_k_after
+            kwargs["rewrite_query"] = rag_mode.rewrite_query
+        _retriever = RAGRetriever(**kwargs)
+        _retriever_config = config_key
     return _retriever
 _MEMCLEAR_LABELS: dict = {
     "short": "краткосрочная",
@@ -1242,7 +1258,11 @@ def _handle_rag_command(action: str, arg: str, state: SessionState) -> None:
         print("[RAG выключен]")
     elif action == "status":
         status = "включён" if state.rag_mode.enabled else "выключен"
-        print(f"[RAG {status}. Стратегия: {state.rag_mode.strategy}, top_k: {state.rag_mode.top_k}]")
+        rm = state.rag_mode
+        print(f"[RAG {status}]")
+        print(f"  стратегия: {rm.strategy}, top_k: {rm.top_k}")
+        print(f"  threshold: {rm.threshold}, top_k_before: {rm.top_k_before}, top_k_after: {rm.top_k_after}")
+        print(f"  rewrite_query: {'ON' if rm.rewrite_query else 'OFF'}")
     elif action == "strategy":
         allowed = ("fixed", "structure")
         if arg in allowed:
@@ -1259,8 +1279,76 @@ def _handle_rag_command(action: str, arg: str, state: SessionState) -> None:
             print(f"[RAG top_k: {n}]")
         except (ValueError, TypeError):
             print(f"[/rag topk требует целое число >= 1, получено: {arg!r}]")
+    elif action == "filter":
+        try:
+            val = float(arg)
+            state.rag_mode.threshold = max(0.0, min(1.0, val))
+            print(f"[RAG] Порог фильтрации: {state.rag_mode.threshold}")
+        except (ValueError, TypeError):
+            print(f"[/rag filter требует число 0.0..1.0, получено: {arg!r}]")
+    elif action in ("topk_before", "topk_after"):
+        try:
+            n = int(arg)
+            field = "top_k_before" if action == "topk_before" else "top_k_after"
+            setattr(state.rag_mode, field, n)
+            print(f"[RAG] {action} = {n}")
+        except (ValueError, TypeError):
+            print(f"[/rag {action} требует целое число, получено: {arg!r}]")
+    elif action == "rewrite":
+        state.rag_mode.rewrite_query = arg.lower() == "on"
+        print(f"[RAG] Query rewrite: {'ON' if state.rag_mode.rewrite_query else 'OFF'}")
+    elif action == "mode":
+        m = arg.upper()
+        if m == "B":
+            state.rag_mode.threshold = 0.0
+            state.rag_mode.top_k_before = 0
+            state.rag_mode.top_k_after = 0
+            state.rag_mode.rewrite_query = False
+        elif m == "C":
+            state.rag_mode.threshold = 0.5
+            state.rag_mode.top_k_before = 10
+            state.rag_mode.top_k_after = 3
+            state.rag_mode.rewrite_query = False
+        elif m == "D":
+            state.rag_mode.threshold = 0.5
+            state.rag_mode.top_k_before = 10
+            state.rag_mode.top_k_after = 3
+            state.rag_mode.rewrite_query = True
+        else:
+            print(f"[/rag mode требует B, C или D, получено: {arg!r}]")
+            return
+        print(f"[RAG] Режим {m} активен")
+    elif action == "search":
+        if not arg:
+            print("[/rag search требует запрос]")
+            return
+        retriever = _get_retriever(state.rag_mode)
+        results = retriever.search_with_scores(arg, strategy=state.rag_mode.strategy,
+                                               top_k=state.rag_mode.top_k)
+        if not results:
+            print("[RAG] Чанки не найдены")
+        for i, r in enumerate(results, 1):
+            print(f"{i}. [{r.score:.3f}] {r.chunk.title} / {r.chunk.section}")
+            print(f"   dist={r.distance:.3f}  query_used={r.query[:60]}")
+            print(f"   {r.chunk.text[:150]}...")
+    elif action == "compare":
+        if not arg:
+            print("[/rag compare требует запрос]")
+            return
+        from llm_agent.rag.retriever import RAGRetriever as _R
+        configs = {
+            "B": _R(relevance_threshold=0.0),
+            "C": _R(relevance_threshold=0.5, top_k_before=10, top_k_after=3),
+            "D": _R(relevance_threshold=0.5, top_k_before=10, top_k_after=3, rewrite_query=True),
+        }
+        for mode_label, ret in configs.items():
+            results = ret.search_with_scores(arg, strategy=state.rag_mode.strategy,
+                                             top_k=state.rag_mode.top_k)
+            print(f"\n── Режим {mode_label} ({len(results)} чанков) ──")
+            for r in results:
+                print(f"  [{r.score:.3f}] {r.chunk.title} / {r.chunk.section[:40]}")
     else:
-        print(f"[Неизвестная подкоманда rag: {action!r}. Доступны: on, off, status, strategy, topk]")
+        print(f"[Неизвестная подкоманда rag: {action!r}. Доступны: on, off, status, strategy, topk, filter, topk_before, topk_after, rewrite, mode, search, compare]")
 
 
 def _handle_project_command(action: str, arg: str, state: SessionState, client: Optional[OpenAI] = None) -> None:
@@ -2704,7 +2792,7 @@ def main() -> None:
         # RAG-обогащение контекста перед API-запросом
         if state.rag_mode.enabled:
             try:
-                _rag_chunks = _get_retriever().search(
+                _rag_chunks = _get_retriever(state.rag_mode).search(
                     user_input, state.rag_mode.strategy, state.rag_mode.top_k
                 )
                 if _rag_chunks:
