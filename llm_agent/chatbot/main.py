@@ -40,6 +40,7 @@ from llm_agent.chatbot.context import (
     build_context_by_strategy,
     build_plan_dialog_prompt,
     build_rag_system_addition,
+    build_rag_idk_system,
     create_branch,
     create_checkpoint,
     extract_facts_from_llm,
@@ -2792,15 +2793,17 @@ def main() -> None:
         # RAG-обогащение контекста перед API-запросом
         if state.rag_mode.enabled:
             try:
-                _rag_chunks = _get_retriever(state.rag_mode).search(
+                _rag_results = _get_retriever(state.rag_mode).search_with_scores(
                     user_input, state.rag_mode.strategy, state.rag_mode.top_k
                 )
-                if _rag_chunks:
+                if _rag_results:
                     from pathlib import Path as _Path
-                    _sources = {_Path(c.source).name for c in _rag_chunks}
-                    print(f"[RAG] Найдено {len(_rag_chunks)} чанк(ов) из: {', '.join(sorted(_sources))}")
-                    _rag_addition = build_rag_system_addition(_rag_chunks)
-                    api_messages.append({"role": "system", "content": _rag_addition})
+                    _sources = {_Path(r.chunk.source).name for r in _rag_results}
+                    print(f"[RAG] Найдено {len(_rag_results)} чанк(ов) из: {', '.join(sorted(_sources))}")
+                    api_messages.append({"role": "system", "content": build_rag_system_addition(_rag_results)})
+                elif state.rag_mode.threshold > 0:
+                    print(f"[RAG] Релевантных чанков не найдено (threshold={state.rag_mode.threshold})")
+                    api_messages.append({"role": "system", "content": build_rag_idk_system()})
             except Exception as _rag_exc:
                 print(f"[RAG] Ошибка поиска: {_rag_exc}")
 

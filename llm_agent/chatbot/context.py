@@ -845,25 +845,46 @@ def build_context_by_strategy(
 # ===========================================================================
 
 
-def build_rag_system_addition(chunks: list) -> str:
-    """Форматирует найденные RAG-чанки в системное дополнение для LLM.
+def build_rag_system_addition(results: list) -> str:
+    """Форматирует найденные RAG-результаты в системное дополнение для LLM.
 
     Args:
-        chunks: List[ChunkMetadata] — результат поиска RAGRetriever.
+        results: List[RetrievalResult] — результат поиска search_with_scores().
 
     Returns:
         Строка для вставки в системное сообщение.
     """
-    if not chunks:
+    if not results:
         return ""
     lines = ["[RAG-контекст]"]
-    for chunk in chunks:
+    for r in results:
+        chunk = r.chunk
+        score = r.score
         source = chunk.source
         section = chunk.section or ""
+        chunk_id = chunk.chunk_id
         header = f"Источник: {source}"
         if section:
             header += f" §{section}"
+        header += f" [score={score:.2f}, chunk_id={chunk_id}]"
         lines.append(header)
         lines.append(chunk.text)
         lines.append("")
+    lines.append(
+        "ОБЯЗАТЕЛЬНЫЙ ФОРМАТ ОТВЕТА:\n"
+        "**Ответ:** <развёрнутый ответ>\n\n"
+        "**Источники:**\n"
+        "- source/file.md §Section (chunk_id=..., score=...)\n\n"
+        "**Цитаты:**\n"
+        '> "фрагмент из найденного чанка"'
+    )
     return "\n".join(lines).strip()
+
+
+def build_rag_idk_system() -> str:
+    """Возвращает системное сообщение для IDK-режима (релевантный контекст не найден)."""
+    return (
+        "Релевантный контекст не найден. "
+        "Скажи пользователю: 'Не знаю — в доступных документах нет информации по этому вопросу. "
+        "Уточните, пожалуйста, ваш запрос или добавьте нужные документы в индекс.'"
+    )
