@@ -1,13 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="b35a12be-6e10-48e6-a4fd-76dfb149614a" name="Changes" comment="day 23 RAG">
-      <change afterPath="$PROJECT_DIR$/llm_agent/RAG_STRUCTURED_OUTPUT_TESTING.md" afterDir="false" />
+    <list default="true" id="b35a12be-6e10-48e6-a4fd-76dfb149614a" name="Changes" comment="day 24 RAG">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/llm_agent/chatbot/context.py" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent/chatbot/context.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/llm_agent/chatbot/main.py" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent/chatbot/main.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/llm_agent/dialogues/Alice/profile.json" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent/dialogues/Alice/profile.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/llm_agent/dialogues/Igor/profile.json" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent/dialogues/Igor/profile.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -367,7 +363,15 @@
       <option name="project" value="LOCAL" />
       <updated>1773912807224</updated>
     </task>
-    <option name="localTasksCounter" value="12" />
+    <task id="LOCAL-00012" summary="day 24 RAG">
+      <option name="closed" value="true" />
+      <created>1773999066221</created>
+      <option name="number" value="00012" />
+      <option name="presentableId" value="LOCAL-00012" />
+      <option name="project" value="LOCAL" />
+      <updated>1773999066221</updated>
+    </task>
+    <option name="localTasksCounter" value="13" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -384,7 +388,8 @@
     <MESSAGE value="day 21 RAG+README.md" />
     <MESSAGE value="day 22 RAG" />
     <MESSAGE value="day 23 RAG" />
-    <option name="LAST_COMMIT_MESSAGE" value="day 23 RAG" />
+    <MESSAGE value="day 24 RAG" />
+    <option name="LAST_COMMIT_MESSAGE" value="day 24 RAG" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/ai_ad_ch6$main__1_.coverage" NAME="main (1) Coverage Results" MODIFIED="1773656293326" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/api_for_mcp/scheduler" />

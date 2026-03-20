@@ -37,9 +37,11 @@ api_for_mcp/        ← FastAPI-микросервисы
 
 **Планирование задач**
 - Конечный автомат: `planning → execution → validation → done` (+ `paused`, `failed`)
+- Guards переходов: `pause` — только из `execution`; `resume` — из `paused` или `validation`; `done` — только из `validation`; `fail` — из любого состояния кроме `done`/`failed`
 - Команды: `/task new|show|list|start|step|pause|resume|done|fail|load|delete|result`
+- Флаг `--plan <name>` поддерживается командами `pause|resume|done|fail|start|step` для адресации конкретного плана
 - Проекты (группировка планов): `/project new|list|switch|show|add-plan`
-- Builder-режим: LLM автоматически исполняет шаги плана с инвариантной проверкой
+- Builder-режим: LLM автоматически исполняет шаги плана с инвариантной проверкой; при исчерпании retries предлагает разрешение: `edit <N> <текст>`, `remove <N>`, `abort`; LLM-анализ `analyze_invariant_impact` предупреждает о риске ослабления безопасности
 
 **Агентский режим (Plan Mode)**
 - `/plan on` — интерактивный онбординг: задача → инварианты → LLM-диалог
@@ -99,7 +101,7 @@ llm_agent/
 | Память | `/remember`, `/memshow`, `/memstats`, `/memsave`, `/memload`, `/memclear` |
 | Профиль | `/profile show\|list\|name\|load\|style\|format\|constraint` |
 | Сессия | `/resume`, `/showsummary`, `/settask` |
-| Задачи | `/task new\|show\|list\|start\|step\|pause\|resume\|done\|fail\|load\|delete\|result` |
+| Задачи | `/task new\|show\|list\|start\|step\|pause\|resume\|done\|fail\|load\|delete\|result` · флаг `--plan <name>` у `pause\|resume\|done\|fail\|start\|step` |
 | Проекты | `/project new\|list\|switch\|show\|add-plan` |
 | Агент/Plan | `/plan on\|off\|status\|retries <n>\|builder\|result` |
 | Инварианты | `/invariant add\|del\|edit\|list\|clear` |
@@ -126,6 +128,159 @@ dialogues/
     memory/short_term/ | working/ | long_term/
     tasks/{task_id}/plan.json + step_NNN.json
     projects/{project_id}/project.json
+```
+
+---
+
+## Примеры сценариев
+
+### Сценарий 1 — Базовый диалог и профили
+
+Демонстрирует запуск, именованный профиль, автовозобновление сессии.
+
+**Шаг 1 — новая сессия (профиль default):**
+```bash
+cd llm_agent
+python3 script.py
+```
+
+**Шаг 2 — именованный профиль (авто-возобновление):**
+```bash
+python3 script.py --profile Igor
+```
+
+Ожидаемый вывод:
+```
+[Профиль: Igor]
+[Загружена сессия: session_2026-03-20_...]
+>
+```
+
+**Шаг 3 — переключить профиль прямо в диалоге:**
+```
+/profile load Bob
+```
+
+Ожидаемый результат: история диалога очищена, загружена последняя сессия Bob
+(или создана новая, если сессий нет).
+
+---
+
+### Сценарий 2 — Полный жизненный цикл задачи
+
+Демонстрирует конечный автомат: `planning → execution → validation → done`
+с guards переходов и флагом `--plan <name>`.
+
+```
+/task new                              # создать план → фаза planning
+/task start --plan "рефакторинг"       # planning → execution
+/task step --plan "рефакторинг"        # выполнить шаг (остаёмся в execution)
+/task pause --plan "рефакторинг"       # execution → paused
+/task resume --plan "рефакторинг"      # paused → execution
+
+/task done --plan "рефакторинг"
+# ОШИБКА: done допустим только из validation, а не из execution!
+
+/task step --plan "рефакторинг"        # execution → validation (последний шаг)
+/task done --plan "рефакторинг"        # validation → done  ✓
+```
+
+Ожидаемый вывод при нарушении guard:
+```
+[Ошибка] Переход done недопустим из фазы execution.
+Допустимые переходы из execution: step, pause, fail.
+```
+
+---
+
+### Сценарий 3 — Агентский режим с инвариантами (/plan on)
+
+Демонстрирует онбординг, добавление инвариантов, цикл авто-ретраев.
+
+**Шаг 1 — включить агентский режим:**
+```
+/plan on
+```
+Ожидаемый результат: LLM спрашивает задачу, формирует начальные инварианты.
+
+**Шаг 2 — просмотреть и настроить инварианты:**
+```
+/invariant list
+/invariant add "Ответ не длиннее 3 абзацев"
+/invariant edit 2 "Ответ содержит конкретный пример кода"
+```
+
+**Шаг 3 — настроить число ретраев и задать вопрос:**
+```
+/plan retries 3
+```
+Ожидаемый результат: при нарушении инварианта LLM автоматически
+делает до 3 повторных попыток, затем возвращает итоговый ответ.
+
+---
+
+### Сценарий 4 — Builder-режим и разрешение инвариантов (/plan builder)
+
+Демонстрирует автоматическое исполнение шагов, конфликт инварианта
+и диалог разрешения (`edit / remove / abort`).
+
+**Шаг 1 — запустить builder:**
+```
+/plan builder
+```
+Ожидаемый результат: онбординг — задача + шаги + инварианты; Builder начинает
+исполнять шаги автоматически.
+
+**Шаг 2 — нарушение инварианта + исчерпание retries (на шаге 3):**
+```
+[Инвариант 2 нарушен. Все попытки исчерпаны.]
+Варианты:
+  edit 2 <новый текст>  — изменить инвариант
+  remove 2              — удалить инвариант
+  abort                 — остановить builder
+```
+
+**Шаг 3 — изменить инвариант и продолжить:**
+```
+> edit 2 "Ответ может содержать псевдокод"
+[LLM-анализ: изменение не ослабляет безопасность]
+Продолжить? (да/нет): да
+```
+Ожидаемый результат: Builder возобновляет шаг 3 с обновлённым инвариантом.
+
+---
+
+### Сценарий 5 — Проекты с несколькими планами
+
+Демонстрирует группировку планов в проект, параллельную работу над ними.
+
+**Шаг 1 — создать проект и планы:**
+```
+/project new "Sprint-1"
+/task new           # → создаёт план A (planning)
+/task new           # → создаёт план B (planning)
+```
+
+**Шаг 2 — добавить планы в проект:**
+```
+/project add-plan "Sprint-1" <plan_id_A>
+/project add-plan "Sprint-1" <plan_id_B>
+/project show "Sprint-1"    # список планов и их текущие статусы
+```
+
+Ожидаемый вывод:
+```
+Проект: Sprint-1
+  [plan_id_A] план A — planning
+  [plan_id_B] план B — planning
+```
+
+**Шаг 3 — параллельная работа:**
+```
+/task start --plan "план A"
+/task start --plan "план B"
+/task pause --plan "план A"   # execution → paused
+/task step  --plan "план B"   # план B продолжает независимо
 ```
 
 ---
