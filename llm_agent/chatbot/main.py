@@ -15,7 +15,7 @@ import uuid
 
 from openai import OpenAI
 
-from llm_agent.chatbot.cli import config_from_args, get_resume_flag, parse_args, parse_inline_command
+from llm_agent.chatbot.cli import config_from_args, parse_args, parse_inline_command
 from llm_agent.chatbot.mcp_client import (
     MCPClientManager,
     MCPPdfMakerClient,
@@ -41,6 +41,7 @@ from llm_agent.chatbot.context import (
     build_plan_dialog_prompt,
     build_rag_system_addition,
     build_rag_idk_system,
+    ensure_rag_sources_in_response,
     create_branch,
     create_checkpoint,
     extract_facts_from_llm,
@@ -1839,6 +1840,12 @@ def _cmd_resume(state: SessionState) -> None:
         state.dialogue_start_time = time.time() - state.duration
         logger.info("Resumed last session: %s", last_path)
         _print_loaded_history(state.messages)
+        if state.active_task_id:
+            _restored_plan = load_task_plan(state.active_task_id, state.profile_name)
+            if _restored_plan:
+                _restored_steps = load_all_steps(state.active_task_id, state.profile_name)
+                print(f"\n[Восстановлена активная задача: {_restored_plan.name}]")
+                _print_task_plan(_restored_plan, _restored_steps)
     else:
         logger.info("No last session found to resume")
         print("No last session found to resume")
@@ -2572,9 +2579,9 @@ def main() -> None:
         print(f"[Профиль создан: {_profile_name}]")
         save_profile(state.memory.long_term.profile, _profile_name)
 
-    # Загружаем историю: всегда при явном --profile; при дефолтном — только если --resume
+    # Загружаем историю: автоматически при явном --profile
     _explicit_profile = getattr(args, "profile", None) is not None
-    if get_resume_flag(args) or _explicit_profile:
+    if _explicit_profile:
         loaded = load_last_session(profile_name=_profile_name)
         if loaded:
             last_path, last_data = loaded
@@ -2791,6 +2798,7 @@ def main() -> None:
                     api_messages.insert(0, {"role": "system", "content": _profile_text})
 
         # RAG-обогащение контекста перед API-запросом
+        _rag_results = []
         if state.rag_mode.enabled:
             try:
                 _rag_results = _get_retriever(state.rag_mode).search_with_scores(
@@ -2800,7 +2808,7 @@ def main() -> None:
                     from pathlib import Path as _Path
                     _sources = {_Path(r.chunk.source).name for r in _rag_results}
                     print(f"[RAG] Найдено {len(_rag_results)} чанк(ов) из: {', '.join(sorted(_sources))}")
-                    api_messages.append({"role": "system", "content": build_rag_system_addition(_rag_results)})
+                    api_messages.append({"role": "system", "content": build_rag_system_addition(_rag_results, state.memory.working)})
                 elif state.rag_mode.threshold > 0:
                     print(f"[RAG] Релевантных чанков не найдено (threshold={state.rag_mode.threshold})")
                     api_messages.append({"role": "system", "content": build_rag_idk_system()})
@@ -2898,6 +2906,10 @@ def main() -> None:
                     state.memory.working.set_preference(su_key, su_val)
                 print(f"[Agent State Update: {state_update}]")
             _collect_plan_clarifications(text, state)
+
+        # Гарантируем наличие источников в тексте ответа
+        if _rag_results:
+            display_text = ensure_rag_sources_in_response(display_text, _rag_results)
 
         # Метрики токенов
         usage = getattr(response, "usage", None)

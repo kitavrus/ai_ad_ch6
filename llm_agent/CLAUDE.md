@@ -14,8 +14,7 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
 # Запуск
-python script.py                          # Новая сессия
-python script.py --resume                 # Возобновить последнюю сессию
+python script.py                          # Новая сессия (введите /resume для продолжения последней)
 python script.py -m "gpt-4" -T 0.8 --strategy sticky_facts
 
 # Тестирование

@@ -1,0 +1,64 @@
+{
+  "dialogue_session_id": "dialogues/default/session_20260323T082518Z_inception_mercury-coder.json",
+  "created_at": "2026-03-23T08:26:15Z",
+  "model": "inception/mercury-coder",
+  "base_url": "https://routerai.ru/api/v1",
+  "system_prompt": null,
+  "initial_prompt": null,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Как устроена трёхуровневая система памяти?",
+      "tokens": null,
+      "tool_call_id": null
+    },
+    {
+      "role": "assistant",
+      "content": "**Ответ:**  \nТрёхуровневая система памяти в описанном проекте состоит из трёх независимых хранилищ, каждое из которых отвечает за хранение информации разного характера и с разным жизненным циклом. Класс `Memory` объединяет их, но каждый уровень имеет собственный класс, путь хранения и область применения:\n\n| Уровень | Класс | Область действия | Путь хранения |\n|---------|-------|-------------------|---------------|\n| Краткосрочная | `ShortTermMemory` | Сообщения текущей сессии | `dialogues/{profile}/memory/short_term/` |\n| Рабочая | `WorkingMemory` | Текущая задача / пользовательские предпочтения | `dialogues/{profile}/memory/working/` |\n| Долгосрочная | `LongTermMemory` | Профиль пользователя, решения, знания | `dialogues/{profile}/memory/long_term/` |\n\n**Краткосрочная память** хранит только сообщения, которые были обменены в текущей сессии. Это позволяет быстро обращаться к недавним диалогам без необходимости загружать более старые данные.\n\n**Рабочая память** содержит текущую задачу (`current_task`) и пользовательские предпочтения (`user_preferences`). Эти данные используются только в режимах «agent» и «plan» через функцию `_build_agent_state_vars()`, где они добавляются в системный промпт агента как поле «Current State».  \n\n**Долгосрочная память** хранит более устойчивую информацию: базу знаний, решения, принятые ранее, и другие данные профиля. Команды `/remember k=v`, `/knowledge k:v` и `/decision <текст>` записывают информацию в `LongTermMemory.knowledge_base` и `LongTermMemory.decisions_log`. При каждом запуске агента содержимое `LongTermMemory.profile.to_system_prompt()` автоматически добавляется к system message, обеспечивая контекст, доступный системе в любой момент.\n\nТаким образом, три уровня памяти работают параллельно, но каждый имеет свою специализацию и способ доступа, что повышает эффективность и управляемость хранения информации.\n\n**Источники:**\n- `README.md` §Модель памяти (chunk_id=readme_19, score=0.57)\n- `CLAUDE.md` §Трехуровневая система памяти (chunk_id=claude_8, score=0.59)\n- `schema-graph.md` §Уровень 3: Трёхуровневая память (Memory object) (chunk_id=schema_graph_4, score=0.49)\n\n**Цитаты:**\n> \"Класс `Memory` объединяет три независимых хранилища: ... Краткосрочная, Рабочая, Долгосрочная.\"  \n> \"... `LongTermMemory.profile.to_system_prompt()` добавляется к system message (кроме режима agent, где заменяет полностью).\"  \n> \"WorkingMemory.current_task + user_preferences ТОЛЬКО в agent/plan mode через `_build_agent_state_vars()` → поле 'Current State' в системном промпте агента.\"",
+      "tokens": {
+        "prompt": 1382,
+        "completion": 673,
+        "total": 2055
+      },
+      "tool_call_id": null
+    },
+    {
+      "role": "user",
+      "content": "Как профильная изоляция реализована в хранилище?",
+      "tokens": null,
+      "tool_call_id": null
+    },
+    {
+      "role": "assistant",
+      "content": "**Ответ:**  \nПрофильная изоляция реализована через файловую структуру, где каждый пользователь (или «профиль») имеет собственный, изолированный каталог.  \n\n```\ndialogues/\n  {profile_name}/          ← отдельный каталог для каждого профиля\n    profile.json           ← профильные данные\n    session_<timestamp>_<model>.json\n    metrics/\n    memory/\n      short_term/\n      working/\n      long_term/\n      state_<timestamp>.json\n    tasks/\n    projects/\n```\n\n* **Отдельный каталог `{profile_name}`** – гарантирует, что все файлы, относящиеся к конкретному пользователю (профиль, сессии, метрики, память, задачи, проекты), находятся в изолированном пространстве.  \n* **Подкаталоги `memory/`** (short_term, working, long_term) также находятся внутри каталога профиля, поэтому любые операции с памятью автоматически ограничиваются данным профилем.  \n* **Экспорт памяти `state_<timestamp>.json`** – создаётся в пределах того же каталога, что и остальные данные профиля, обеспечивая целостность и изоляцию при переносе или резервном копировании.\n\nТаким образом, профильная изоляция достигается за счёт разделения данных по отдельным каталогам в файловой системе, что предотвращает доступ к данным одного профиля из другого и упрощает управление правами доступа и резервным копированием.\n\n**Источники:**\n- `research.md` §4. Хранилище (структура файловой системы) – chunk_id=research_11, score=0.44\n- `CLAUDE.md` §Архитектура – chunk_id=claude_6, score=0.42",
+      "tokens": {
+        "prompt": 2226,
+        "completion": 363,
+        "total": 2589
+      },
+      "tool_call_id": null
+    }
+  ],
+  "context_summary": "",
+  "turns": 4,
+  "last_user_input": null,
+  "last_assistant_content": null,
+  "duration_seconds": 56.8569700717926,
+  "total_tokens": 4644,
+  "total_prompt_tokens": 3608,
+  "total_completion_tokens": 1036,
+  "requests": [],
+  "context_strategy": "sliding_window",
+  "sticky_facts": {},
+  "branches": [],
+  "active_branch_id": null,
+  "active_task_id": null,
+  "active_task_ids": [],
+  "active_project_id": null,
+  "agent_mode": {
+    "enabled": false,
+    "invariants": [],
+    "max_retries": 3
+  },
+  "plan_dialog_state": null
+}

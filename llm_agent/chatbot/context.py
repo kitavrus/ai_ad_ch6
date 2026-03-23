@@ -845,18 +845,32 @@ def build_context_by_strategy(
 # ===========================================================================
 
 
-def build_rag_system_addition(results: list) -> str:
+def build_rag_system_addition(results: list, working_memory=None) -> str:
     """Форматирует найденные RAG-результаты в системное дополнение для LLM.
 
     Args:
         results: List[RetrievalResult] — результат поиска search_with_scores().
+        working_memory: Optional[WorkingMemory] — рабочая память для добавления цели/задачи.
 
     Returns:
         Строка для вставки в системное сообщение.
     """
     if not results:
         return ""
-    lines = ["[RAG-контекст]"]
+    lines = []
+    if working_memory is not None:
+        task = getattr(working_memory, "current_task", None)
+        prefs = getattr(working_memory, "user_preferences", {})
+        if task:
+            lines.append("[Задача]")
+            lines.append(f"Задача: {task}")
+            lines.append("")
+        if prefs:
+            lines.append("[Зафиксированные предпочтения/ограничения]")
+            for k, v in prefs.items():
+                lines.append(f"- {k}: {v}")
+            lines.append("")
+    lines.append("[RAG-контекст]")
     for r in results:
         chunk = r.chunk
         score = r.score
@@ -888,3 +902,17 @@ def build_rag_idk_system() -> str:
         "Скажи пользователю: 'Не знаю — в доступных документах нет информации по этому вопросу. "
         "Уточните, пожалуйста, ваш запрос или добавьте нужные документы в индекс.'"
     )
+
+
+def ensure_rag_sources_in_response(response_text: str, results: list) -> str:
+    """Если LLM не включил **Источники:** — добавляем блок принудительно."""
+    if "**Источники:**" in response_text or not results:
+        return response_text
+    lines = [response_text.rstrip(), "", "**Источники:**"]
+    for r in results:
+        chunk = r.chunk
+        section = f" §{chunk.section}" if chunk.section else ""
+        lines.append(
+            f"- {chunk.source}{section} (chunk_id={chunk.chunk_id}, score={r.score:.2f})"
+        )
+    return "\n".join(lines)

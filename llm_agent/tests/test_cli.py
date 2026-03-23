@@ -5,7 +5,6 @@ import sys
 
 from llm_agent.chatbot.cli import (
     config_from_args,
-    get_resume_flag,
     parse_args,
     parse_inline_command,
 )
@@ -29,7 +28,6 @@ def _make_args(**kwargs) -> argparse.Namespace:
         "top_k": None,
         "system_prompt": None,
         "initial_prompt": None,
-        "resume": False,
     }
     defaults.update(kwargs)
     return argparse.Namespace(**defaults)
@@ -86,25 +84,6 @@ class TestConfigFromArgs:
         args = _make_args(initial_prompt="Start now.")
         cfg = config_from_args(args)
         assert cfg.initial_prompt == "Start now."
-
-
-# ---------------------------------------------------------------------------
-# get_resume_flag
-# ---------------------------------------------------------------------------
-
-
-class TestGetResumeFlag:
-    def test_false_by_default(self):
-        args = _make_args()
-        assert get_resume_flag(args) is False
-
-    def test_true_when_set(self):
-        args = _make_args(resume=True)
-        assert get_resume_flag(args) is True
-
-    def test_missing_attribute_returns_false(self):
-        args = argparse.Namespace()
-        assert get_resume_flag(args) is False
 
 
 # ---------------------------------------------------------------------------
@@ -343,17 +322,24 @@ class TestParseArgs:
         assert args.top_k is None
         assert args.system_prompt is None
         assert args.initial_prompt is None
-        assert args.resume is False
 
     def test_model_flag(self, monkeypatch):
         monkeypatch.setattr(sys, "argv", ["prog", "-m", "gpt-4"])
         args = parse_args()
         assert args.model == "gpt-4"
 
-    def test_resume_flag(self, monkeypatch):
-        monkeypatch.setattr(sys, "argv", ["prog", "--resume"])
-        args = parse_args()
-        assert args.resume is True
+    def test_resume_inline_no_value(self):
+        """'/resume' без значения должен возвращать resume=True."""
+        result = parse_inline_command("/resume")
+        assert result.get("resume") is True
+
+    def test_resume_inline_true_value(self):
+        result = parse_inline_command("/resume true")
+        assert result.get("resume") is True
+
+    def test_resume_inline_false_value(self):
+        result = parse_inline_command("/resume false")
+        assert result.get("resume") is False
 
     def test_max_tokens_flag(self, monkeypatch):
         monkeypatch.setattr(sys, "argv", ["prog", "--max-tokens", "512"])

@@ -59,11 +59,6 @@ def parse_args() -> argparse.Namespace:
         help="Начальное сообщение пользователя (seed)",
     )
     parser.add_argument(
-        "--resume",
-        action="store_true",
-        help="Загрузить последнюю сессию и продолжить диалог",
-    )
-    parser.add_argument(
         "--strategy",
         choices=_STRATEGY_VALUES,
         default=ContextStrategy.SLIDING_WINDOW.value,
@@ -305,7 +300,7 @@ def parse_inline_command(line: str) -> dict:
     elif key in {"initial_prompt", "initial-prompt"}:
         updates["initial_prompt"] = value
     elif key == "resume":
-        updates["resume"] = value.lower() in {"true", "1", "yes", "on"}
+        updates["resume"] = (not value) or value.lower() in {"true", "1", "yes", "on"}
     elif key == "showsummary":
         updates["showsummary"] = True
 
@@ -381,7 +376,6 @@ def parse_inline_command(line: str) -> dict:
         # /remember key=value  or  /remember decision text
         if value.strip():
             updates["remember"] = value.strip()
-
     # --- Управление профилем пользователя ---
     elif key == "profile":
         # Субкоманды:
@@ -406,13 +400,3 @@ def parse_inline_command(line: str) -> dict:
     return updates
 
 
-def get_resume_flag(args: argparse.Namespace) -> bool:
-    """Возвращает флаг --resume из аргументов CLI.
-
-    Args:
-        args: Разобранные аргументы CLI.
-
-    Returns:
-        True, если передан флаг --resume.
-    """
-    return bool(getattr(args, "resume", False))

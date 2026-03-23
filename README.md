@@ -100,7 +100,7 @@ llm_agent/
 | Стратегия контекста | `/strategy`, `/checkpoint`, `/branch`, `/switch`, `/showfacts`, `/setfact`, `/delfact` |
 | Память | `/remember`, `/memshow`, `/memstats`, `/memsave`, `/memload`, `/memclear` |
 | Профиль | `/profile show\|list\|name\|load\|style\|format\|constraint` |
-| Сессия | `/resume`, `/showsummary`, `/settask` |
+| Сессия | `/resume` — загрузить последнюю сессию текущего профиля · `/showsummary` · `/settask` |
 | Задачи | `/task new\|show\|list\|start\|step\|pause\|resume\|done\|fail\|load\|delete\|result` · флаг `--plan <name>` у `pause\|resume\|done\|fail\|start\|step` |
 | Проекты | `/project new\|list\|switch\|show\|add-plan` |
 | Агент/Plan | `/plan on\|off\|status\|retries <n>\|builder\|result` |
@@ -113,9 +113,11 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env  # заполнить API_KEY
 python3 script.py                     # новая сессия (профиль default)
-python3 script.py --resume            # возобновить последнюю сессию
-python3 script.py --profile Igor      # профиль Igor (авто-возобновление)
+python3 script.py --profile Igor      # профиль Igor (авто-возобновление последней сессии)
 python3 script.py -m "gpt-4" -T 0.8 --strategy sticky_facts
+
+# Возобновить сессию default-профиля — вводится как команда после запуска:
+# /resume
 ```
 
 **Хранилище данных:**
@@ -136,19 +138,39 @@ dialogues/
 
 ### Сценарий 1 — Базовый диалог и профили
 
-Демонстрирует запуск, именованный профиль, автовозобновление сессии.
+Демонстрирует запуск, именованный профиль, возобновление сессии.
 
 **Шаг 1 — новая сессия (профиль default):**
 ```bash
 cd llm_agent
 python3 script.py
 ```
+```
+Сколько уровней памяти в этом чатботе?
+exit
+```
 
-**Шаг 2 — именованный профиль (авто-возобновление):**
+**Шаг 2 — возобновить сессию default-профиля через /resume:**
+```bash
+python3 script.py
+```
+```
+/resume
+```
+Ожидаемый вывод:
+```
+[Загружена история: 2 сообщений]
+>
+```
+```
+Ты упоминал уровни памяти — как хранится рабочая память между сессиями?
+```
+Ожидаемый результат: ассистент отвечает с учётом предыдущего вопроса.
+
+**Шаг 3 — именованный профиль (авто-возобновление):**
 ```bash
 python3 script.py --profile Igor
 ```
-
 Ожидаемый вывод:
 ```
 [Профиль: Igor]
@@ -156,11 +178,10 @@ python3 script.py --profile Igor
 >
 ```
 
-**Шаг 3 — переключить профиль прямо в диалоге:**
+**Шаг 4 — переключить профиль прямо в диалоге:**
 ```
 /profile load Bob
 ```
-
 Ожидаемый результат: история диалога очищена, загружена последняя сессия Bob
 (или создана новая, если сессий нет).
 

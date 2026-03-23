@@ -240,10 +240,10 @@ class TestApplyInlineUpdates:
         assert state.messages[0].role == "system"
         assert state.messages[0].content == "Auto sys."
 
-    def test_resume_no_session_prints_message(self, capsys):
+    def test_resume_no_session_prints_message(self, capsys, monkeypatch, tmp_path):
+        monkeypatch.chdir(tmp_path)
         state = _make_state()
-        with patch("chatbot.main.load_last_session", return_value=None):
-            _apply_inline_updates({"resume": True}, state)
+        _apply_inline_updates({"resume": True}, state)
         out = capsys.readouterr().out
         assert "No last session found" in out
 
@@ -260,10 +260,10 @@ class TestApplyInlineUpdates:
             "context_summary": "summary",
         }
         with patch(
-            "chatbot.main.load_last_session",
+            "llm_agent.chatbot.main.load_last_session",
             return_value=("dialogues/session_test.json", mock_data),
         ):
-            with patch("chatbot.main._print_loaded_history"):
+            with patch("llm_agent.chatbot.main._print_loaded_history"):
                 _apply_inline_updates({"resume": True}, state)
         assert state.model == "loaded-model"
         assert state.total_tokens == 42
@@ -517,7 +517,7 @@ class TestMain:
             main()
 
     def test_main_resume_with_session(self, monkeypatch, tmp_path):
-        """--resume при наличии сессии загружает её без падений."""
+        """/resume при наличии сессии загружает её без падений."""
         monkeypatch.chdir(tmp_path)
 
         mock_data = {
@@ -537,7 +537,7 @@ class TestMain:
              patch("chatbot.main.load_last_session",
                    return_value=("dialogues/session_x.json", mock_data)), \
              patch("chatbot.main._print_loaded_history"), \
-             patch("builtins.input", side_effect=EOFError):
+             patch("builtins.input", side_effect=["/resume", EOFError()]):
 
             mock_args = MagicMock()
             mock_args.model = None
@@ -548,7 +548,6 @@ class TestMain:
             mock_args.top_k = None
             mock_args.system_prompt = None
             mock_args.initial_prompt = None
-            mock_args.resume = True
             mock_args.profile = None
             mock_parse_args.return_value = mock_args
             mock_openai.return_value = MagicMock()
@@ -943,15 +942,14 @@ class TestPrintLoadedHistoryEdgeCases:
         mock_client.chat.completions.create.assert_not_called()
 
     def test_main_resume_flag(self, monkeypatch, tmp_path, capsys):
-        """--resume при отсутствии сохранённых сессий не падает."""
+        """/resume при отсутствии сохранённых сессий не падает."""
         monkeypatch.chdir(tmp_path)
-        inputs = iter([EOFError()])
 
         with patch("chatbot.main.API_KEY", "fake-key"), \
              patch("chatbot.main.parse_args") as mock_parse_args, \
              patch("chatbot.main.OpenAI") as mock_openai, \
              patch("chatbot.main.load_last_session", return_value=None), \
-             patch("builtins.input", side_effect=EOFError):
+             patch("builtins.input", side_effect=["/resume", EOFError()]):
 
             mock_args = MagicMock()
             mock_args.model = None
@@ -962,7 +960,6 @@ class TestPrintLoadedHistoryEdgeCases:
             mock_args.top_k = None
             mock_args.system_prompt = None
             mock_args.initial_prompt = None
-            mock_args.resume = True
             mock_args.profile = None
             mock_parse_args.return_value = mock_args
             mock_openai.return_value = MagicMock()
