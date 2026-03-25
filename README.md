@@ -18,6 +18,8 @@ llm_mcp/            ← MCP-серверы (обёртки над API)
      │  HTTP + API-ключ
      ▼
 api_for_mcp/        ← FastAPI-микросервисы
+
+llm_local/          ← Локальный LLM-чат через Ollama (автономный)
 ```
 
 ---
@@ -302,6 +304,38 @@ python3 script.py --profile Igor
 /task start --plan "план B"
 /task pause --plan "план A"   # execution → paused
 /task step  --plan "план B"   # план B продолжает независимо
+```
+
+---
+
+---
+
+### llm_local/ — Локальный LLM-чат (Ollama)
+
+Минималистичный CLI-чат, работающий с локальными моделями через [Ollama](https://ollama.com/) — без интернета и внешних API-ключей.
+
+**Возможности:**
+- Диалог с локальной моделью (по умолчанию `qwen3:14b`)
+- Команды во время диалога: `/model <name>`, `/temperature <0-2>`, `/status`, `/help`
+- Валидация температуры с понятными сообщениями об ошибках
+
+**Запуск:**
+```bash
+# Установить и запустить Ollama: https://ollama.com/
+ollama pull qwen3:14b
+
+cd llm_local
+pip install ollama
+python3 main.py
+```
+
+```
+Модель: qwen3:14b | температура: 0.7
+Команды: /model <name>, /temperature <0-2>, /status, /help, exit
+> Привет!
+> /model llama3.2
+> /temperature 0.5
+> exit
 ```
 
 ---
