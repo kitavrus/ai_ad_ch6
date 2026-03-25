@@ -19,7 +19,7 @@ llm_mcp/            ← MCP-серверы (обёртки над API)
      ▼
 api_for_mcp/        ← FastAPI-микросервисы
 
-llm_local/          ← Локальный LLM-чат через Ollama (автономный)
+llm_local/          ← Локальный LLM-чат + RAG через Ollama (автономный)
 ```
 
 ---
@@ -310,9 +310,13 @@ python3 script.py --profile Igor
 
 ---
 
-### llm_local/ — Локальный LLM-чат (Ollama)
+### llm_local/ — Локальный LLM-чат и RAG (Ollama)
 
-Минималистичный CLI-чат, работающий с локальными моделями через [Ollama](https://ollama.com/) — без интернета и внешних API-ключей.
+Два инструмента для работы с локальными моделями через [Ollama](https://ollama.com/) — без внешних сервисов генерации.
+
+#### `main.py` — интерактивный чат
+
+Минималистичный CLI-чат, работающий с локальными моделями.
 
 **Возможности:**
 - Диалог с локальной моделью (по умолчанию `qwen3:14b`)
@@ -322,6 +326,7 @@ python3 script.py --profile Igor
 **Запуск:**
 ```bash
 # Установить и запустить Ollama: https://ollama.com/
+ollama serve       # запустить сервер Ollama
 ollama pull qwen3:14b
 
 cd llm_local
@@ -336,6 +341,49 @@ python3 main.py
 > /model llama3.2
 > /temperature 0.5
 > exit
+```
+
+#### `rag_local.py` — RAG-пайплайн с локальной генерацией
+
+`LocalRAGPipeline` — подключает локальную LLM к существующему FAISS-индексу из `llm_agent/rag_index/`.
+Retrieval (FAISS-поиск) полностью локальный. Embeddings для запроса используют тот же API, что при построении индекса (`text-embedding-3-small`). Генерация ответа — через Ollama (локально) или OpenAI (для сравнения).
+
+| Метод | Backend | RAG |
+|-------|---------|-----|
+| `ask_local_norag(q)` | Ollama | Нет |
+| `ask_local(q)` | Ollama + FAISS | Да |
+| `ask_cloud_norag(q)` | OpenAI | Нет |
+| `ask_cloud(q)` | OpenAI + FAISS | Да |
+
+Каждый метод возвращает `{answer, search_time, generate_time, total_time, char_count, rag_used}`.
+
+**Интерактивный тест (3 вопроса):**
+```bash
+cd /путь/к/проекту
+source llm_agent/.venv/bin/activate
+python llm_local/rag_local.py
+```
+
+#### `compare_local_cloud.py` — сравнение Local vs Cloud
+
+Прогоняет 10 контрольных вопросов в 4 режимах и сохраняет Markdown-отчёт с тайминговой таблицей.
+
+```bash
+# Только локальные режимы (API-ключ не нужен)
+python llm_local/compare_local_cloud.py --modes LOCAL_NORAG,LOCAL_RAG --output local_report.md
+
+# Полное сравнение (нужен API_KEY в .env)
+python llm_local/compare_local_cloud.py --output full_report.md
+```
+
+Отчёт включает: ответ каждого режима, время генерации, количество символов и сводную таблицу средних тайминг по режимам.
+
+**Структура файлов:**
+```
+llm_local/
+  main.py              # CLI-чат с Ollama
+  rag_local.py         # LocalRAGPipeline (4 режима: local/cloud × rag/norag)
+  compare_local_cloud.py  # сравнительный скрипт, генерирует Markdown-отчёт
 ```
 
 ---
