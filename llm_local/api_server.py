@@ -24,7 +24,7 @@ from typing import Any
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 # ---------------------------------------------------------------------------
@@ -192,6 +192,13 @@ def get_client_ip(request: Request) -> str:
 # Endpoints
 # ---------------------------------------------------------------------------
 
+@app.get("/")
+async def index():
+    """Serve the web chat UI."""
+    html_path = os.path.join(os.path.dirname(__file__), "web", "index.html")
+    return FileResponse(html_path, media_type="text/html")
+
+
 @app.get("/health", response_model=HealthResponse)
 async def health():
     """Check server health and Ollama availability."""
@@ -319,7 +326,7 @@ if __name__ == "__main__":
     print(f"  Max context: {MAX_CONTEXT_MESSAGES} messages")
     print(f"  Session TTL: {SESSION_TTL_SECONDS}s")
     print(f"  Listening on http://{API_HOST}:{API_PORT}")
-    print(f"  Web UI: open llm_local/web/index.html in browser")
+    print(f"  Web UI: http://localhost:{API_PORT}/")
     print()
 
     uvicorn.run(app, host=API_HOST, port=API_PORT)
