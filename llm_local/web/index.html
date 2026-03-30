@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Local LLM Chat</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #1a1a2e;
+    --panel: #16213e;
+    --surface: #0f3460;
+    --accent: #e94560;
+    --accent2: #533483;
+    --text: #e0e0e0;
+    --text-dim: #888;
+    --user-bg: #533483;
+    --bot-bg: #0f3460;
+    --border: #2a2a4a;
+    --green: #4caf50;
+    --red: #f44336;
+    --yellow: #ff9800;
+    --radius: 12px;
+  }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100vh;
+    display: flex;
+    overflow: hidden;
+  }
+
+  /* ── Sidebar ── */
+  #sidebar {
+    width: 280px;
+    min-width: 220px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    gap: 12px;
+    overflow-y: auto;
+  }
+
+  #sidebar h2 {
+    font-size: 1rem;
+    color: var(--accent);
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+
+  .field-label {
+    font-size: 0.72rem;
+    color: var(--text-dim);
+    margin-bottom: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+  }
+
+  .field-group { display: flex; flex-direction: column; gap: 4px; }
+
+  input[type="text"], input[type="number"], select, textarea {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 0.85rem;
+    width: 100%;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent2); }
+
+  .range-row { display: flex; align-items: center; gap: 8px; }
+  .range-row input[type="range"] {
+    flex: 1; padding: 0; border: none; background: transparent; cursor: pointer;
+    accent-color: var(--accent);
+  }
+  .range-val { min-width: 32px; font-size: 0.82rem; color: var(--accent); text-align: right; }
+
+  .divider { border: none; border-top: 1px solid var(--border); }
+
+  /* Status indicator */
+  #status-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--bg);
+    font-size: 0.78rem;
+  }
+  .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-dim); flex-shrink: 0;
+  }
+  .dot.green { background: var(--green); }
+  .dot.red   { background: var(--red); }
+  .dot.yellow { background: var(--yellow); animation: pulse 1s infinite; }
+
+  @keyframes pulse { 0%,100% { opacity:1 } 50% { opacity:.4 } }
+
+  .btn {
+    padding: 8px 14px;
+    border-radius: 6px;
+    border: none;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: opacity 0.15s, transform 0.1s;
+  }
+  .btn:hover { opacity: 0.85; }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-secondary { background: var(--surface); color: var(--text); }
+  .btn-full { width: 100%; }
+
+  /* Session info */
+  #session-info {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    word-break: break-all;
+    line-height: 1.4;
+  }
+
+  /* ── Main area ── */
+  #main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  #chat-header {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--panel);
+    flex-shrink: 0;
+  }
+  #chat-header h1 { font-size: 1rem; color: var(--text); }
+  #model-badge {
+    font-size: 0.75rem;
+    background: var(--surface);
+    padding: 3px 10px;
+    border-radius: 20px;
+    color: var(--accent);
+  }
+
+  /* Messages */
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    scroll-behavior: smooth;
+  }
+  #messages:empty::after {
+    content: "Начни диалог — введи сообщение ниже";
+    color: var(--text-dim);
+    font-size: 0.9rem;
+    text-align: center;
+    margin-top: 40px;
+  }
+
+  .msg { display: flex; flex-direction: column; max-width: 75%; }
+  .msg.user { align-self: flex-end; align-items: flex-end; }
+  .msg.assistant { align-self: flex-start; align-items: flex-start; }
+
+  .msg-role {
+    font-size: 0.7rem;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    padding: 0 4px;
+  }
+
+  .msg-bubble {
+    padding: 10px 14px;
+    border-radius: var(--radius);
+    line-height: 1.55;
+    font-size: 0.9rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .msg.user .msg-bubble {
+    background: var(--user-bg);
+    border-bottom-right-radius: 4px;
+  }
+  .msg.assistant .msg-bubble {
+    background: var(--bot-bg);
+    border-bottom-left-radius: 4px;
+    border: 1px solid var(--border);
+  }
+
+  /* Code blocks inside messages */
+  .msg-bubble pre {
+    background: #0a0a1a;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    margin: 8px 0;
+    font-size: 0.82rem;
+    font-family: 'Fira Code', 'Consolas', monospace;
+  }
+  .msg-bubble code { font-family: 'Fira Code', 'Consolas', monospace; }
+
+  .msg-meta {
+    font-size: 0.68rem;
+    color: var(--text-dim);
+    margin-top: 3px;
+    padding: 0 4px;
+  }
+
+  /* Typing indicator */
+  #typing {
+    display: none;
+    align-self: flex-start;
+    padding: 10px 14px;
+    background: var(--bot-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    border-bottom-left-radius: 4px;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+  }
+  #typing.visible { display: block; }
+  #typing span { animation: blink 1.2s infinite; }
+  #typing span:nth-child(2) { animation-delay: 0.2s; }
+  #typing span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes blink { 0%,80%,100% { opacity:0 } 40% { opacity:1 } }
+
+  /* Error toast */
+  #toast {
+    position: fixed; bottom: 80px; right: 20px;
+    background: #2a0a0a; border: 1px solid var(--red);
+    color: #ffaaaa; padding: 10px 16px; border-radius: 8px;
+    font-size: 0.85rem; max-width: 320px; display: none;
+    z-index: 100; line-height: 1.4;
+  }
+  #toast.visible { display: block; animation: fadein 0.2s ease; }
+  @keyframes fadein { from { opacity:0; transform: translateY(8px) } to { opacity:1; transform:none } }
+
+  /* Input area */
+  #input-area {
+    padding: 14px 20px;
+    border-top: 1px solid var(--border);
+    background: var(--panel);
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+    flex-shrink: 0;
+  }
+  #input-area textarea {
+    flex: 1;
+    resize: none;
+    min-height: 44px;
+    max-height: 140px;
+    line-height: 1.5;
+    font-size: 0.9rem;
+  }
+  #send-btn {
+    padding: 10px 20px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    transition: opacity 0.15s;
+    flex-shrink: 0;
+    height: 44px;
+  }
+  #send-btn:hover { opacity: 0.85; }
+  #send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  /* Responsive */
+  @media (max-width: 600px) {
+    #sidebar { width: 100%; position: absolute; z-index: 50; height: 100%; display: none; }
+    #sidebar.open { display: flex; }
+    .msg { max-width: 92%; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Sidebar / Settings -->
+<aside id="sidebar">
+  <h2>⚙ Настройки</h2>
+
+  <div class="field-group">
+    <div class="field-label">API URL</div>
+    <input type="text" id="api-url" value="http://localhost:8000" placeholder="http://localhost:8000">
+  </div>
+
+  <div class="field-group">
+    <div class="field-label">Модель (введи вручную или выбери из списка)</div>
+    <input type="text" id="model-select" list="models-datalist"
+           placeholder="qwen3:14b" value="qwen3:14b" autocomplete="off">
+    <datalist id="models-datalist"></datalist>
+  </div>
+
+  <div class="field-group">
+    <div class="field-label">Температура</div>
+    <div class="range-row">
+      <input type="range" id="temperature" min="0" max="2" step="0.05" value="0.7"
+             oninput="document.getElementById('temp-val').textContent=this.value">
+      <span class="range-val" id="temp-val">0.7</span>
+    </div>
+  </div>
+
+  <div class="field-group">
+    <div class="field-label">Max tokens</div>
+    <div class="range-row">
+      <input type="range" id="max-tokens" min="64" max="4096" step="64" value="1024"
+             oninput="document.getElementById('tokens-val').textContent=this.value">
+      <span class="range-val" id="tokens-val">1024</span>
+    </div>
+  </div>
+
+  <button class="btn btn-secondary btn-full" onclick="checkHealth(); loadModels()">
+    ↺ Обновить статус
+  </button>
+
+  <hr class="divider">
+
+  <div id="status-bar">
+    <div class="dot" id="status-dot"></div>
+    <span id="status-text">Проверка...</span>
+  </div>
+
+  <hr class="divider">
+
+  <div class="field-group">
+    <div class="field-label">Текущая сессия</div>
+    <div id="session-info">— нет —</div>
+  </div>
+
+  <button class="btn btn-primary btn-full" onclick="newChat()">+ Новый чат</button>
+</aside>
+
+<!-- Main -->
+<div id="main">
+  <header id="chat-header">
+    <h1>Local LLM Chat</h1>
+    <span id="model-badge">—</span>
+  </header>
+
+  <div id="messages"></div>
+  <div id="typing"><span>●</span><span>●</span><span>●</span></div>
+
+  <div id="input-area">
+    <textarea id="user-input" placeholder="Введи сообщение... (Enter — отправить, Shift+Enter — новая строка)"
+              rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+    <button id="send-btn" onclick="sendMessage()">Отправить</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── State ──────────────────────────────────────────────────────────────────
+let sessionId = "";
+let retryTimer = null;
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+function apiUrl() {
+  return document.getElementById("api-url").value.replace(/\/$/, "");
+}
+
+function showToast(msg, durationMs = 5000) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("visible");
+  clearTimeout(showToast._timer);
+  showToast._timer = setTimeout(() => el.classList.remove("visible"), durationMs);
+}
+
+function setStatus(state, text) {
+  const dot = document.getElementById("status-dot");
+  const txt = document.getElementById("status-text");
+  dot.className = "dot " + state;   // green | red | yellow | ""
+  txt.textContent = text;
+}
+
+function autoResize(el) {
+  el.style.height = "auto";
+  el.style.height = Math.min(el.scrollHeight, 140) + "px";
+}
+
+function handleKey(e) {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    sendMessage();
+  }
+}
+
+function scrollToBottom() {
+  const el = document.getElementById("messages");
+  el.scrollTop = el.scrollHeight;
+}
+
+// ── Render markdown-lite ────────────────────────────────────────────────────
+function renderContent(text) {
+  // Code blocks ```lang\n...\n```
+  text = text.replace(/```[\w]*\n?([\s\S]*?)```/g, (_, code) =>
+    `<pre><code>${escapeHtml(code.trim())}</code></pre>`
+  );
+  // Inline code `...`
+  text = text.replace(/`([^`]+)`/g, (_, code) =>
+    `<code>${escapeHtml(code)}</code>`
+  );
+  // Bold **...**
+  text = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+  return text;
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+// ── Add message bubble ──────────────────────────────────────────────────────
+function addMessage(role, content, meta = "") {
+  const messages = document.getElementById("messages");
+  const wrap = document.createElement("div");
+  wrap.className = `msg ${role}`;
+
+  const roleLabel = document.createElement("div");
+  roleLabel.className = "msg-role";
+  roleLabel.textContent = role === "user" ? "Вы" : "Ассистент";
+
+  const bubble = document.createElement("div");
+  bubble.className = "msg-bubble";
+  // For user messages escape HTML; for assistant render markdown-lite
+  if (role === "user") {
+    bubble.textContent = content;
+  } else {
+    bubble.innerHTML = renderContent(content);
+  }
+
+  wrap.appendChild(roleLabel);
+  wrap.appendChild(bubble);
+
+  if (meta) {
+    const metaEl = document.createElement("div");
+    metaEl.className = "msg-meta";
+    metaEl.textContent = meta;
+    wrap.appendChild(metaEl);
+  }
+
+  messages.appendChild(wrap);
+  scrollToBottom();
+  return wrap;
+}
+
+// ── Health check ────────────────────────────────────────────────────────────
+async function checkHealth() {
+  setStatus("yellow", "Проверка...");
+  try {
+    const r = await fetch(`${apiUrl()}/health`, { signal: AbortSignal.timeout(6000) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    if (data.ollama_available) {
+      setStatus("green", `API + Ollama OK`);
+    } else {
+      setStatus("yellow", `API OK, Ollama недоступен`);
+    }
+  } catch (e) {
+    setStatus("red", `API недоступен`);
+  }
+}
+
+// ── Load models ─────────────────────────────────────────────────────────────
+async function loadModels() {
+  const dl = document.getElementById("models-datalist");
+  try {
+    const r = await fetch(`${apiUrl()}/models`, { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    const models = data.models || [];
+    dl.innerHTML = models.map(m => `<option value="${m}">`).join("");
+    // If current value is default placeholder and API returned models, set first model
+    const inp = document.getElementById("model-select");
+    if (models.length && (!inp.value || inp.value === "qwen3:14b")) {
+      inp.value = models[0];
+    }
+    updateModelBadge();
+  } catch (e) {
+    // API unavailable — keep manually typed value, just clear datalist
+    dl.innerHTML = "";
+    updateModelBadge();
+  }
+}
+
+function updateModelBadge() {
+  const val = document.getElementById("model-select").value.trim();
+  document.getElementById("model-badge").textContent = val || "—";
+}
+
+document.getElementById("model-select").addEventListener("input", updateModelBadge);
+
+// ── New chat ────────────────────────────────────────────────────────────────
+function newChat() {
+  sessionId = "";
+  document.getElementById("messages").innerHTML = "";
+  document.getElementById("session-info").textContent = "— нет —";
+}
+
+// ── Send message ────────────────────────────────────────────────────────────
+async function sendMessage() {
+  const input = document.getElementById("user-input");
+  const message = input.value.trim();
+  if (!message) return;
+
+  const model = document.getElementById("model-select").value.trim();
+  if (!model) { showToast("Введи имя модели в поле «Модель» (например: qwen3:14b)"); return; }
+
+  const temperature = parseFloat(document.getElementById("temperature").value);
+  const maxTokens = parseInt(document.getElementById("max-tokens").value);
+
+  // Clear input, show user bubble
+  input.value = "";
+  autoResize(input);
+  addMessage("user", message);
+
+  // Show typing
+  const typing = document.getElementById("typing");
+  typing.classList.add("visible");
+  scrollToBottom();
+
+  const sendBtn = document.getElementById("send-btn");
+  sendBtn.disabled = true;
+
+  const t0 = Date.now();
+
+  try {
+    const r = await fetch(`${apiUrl()}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message,
+        session_id: sessionId,
+        model,
+        temperature,
+        max_tokens: maxTokens,
+      }),
+      signal: AbortSignal.timeout(130000),
+    });
+
+    if (r.status === 429) {
+      const data = await r.json();
+      const retryAfter = parseInt(r.headers.get("Retry-After") || "60");
+      showToast(`⏱ ${data.detail}`, (retryAfter + 1) * 1000);
+      // countdown in status
+      startRetryCountdown(retryAfter);
+      return;
+    }
+
+    if (!r.ok) {
+      const data = await r.json().catch(() => ({}));
+      throw new Error(data.detail || `HTTP ${r.status}`);
+    }
+
+    const data = await r.json();
+    sessionId = data.session_id;
+
+    const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+    const meta = `${elapsed}s · ${data.tokens_used} токенов · ${data.model}`;
+    addMessage("assistant", data.response, meta);
+
+    // Update session info
+    document.getElementById("session-info").textContent =
+      `ID: ${sessionId.slice(0, 8)}...`;
+
+  } catch (e) {
+    if (e.name === "TimeoutError") {
+      showToast("⏱ Таймаут — модель не ответила за 130 секунд");
+    } else {
+      showToast(`Ошибка: ${e.message}`);
+    }
+  } finally {
+    typing.classList.remove("visible");
+    sendBtn.disabled = false;
+    input.focus();
+  }
+}
+
+// ── Rate limit countdown ────────────────────────────────────────────────────
+function startRetryCountdown(seconds) {
+  clearInterval(retryTimer);
+  setStatus("yellow", `Rate limit: ${seconds}s`);
+  let remaining = seconds;
+  retryTimer = setInterval(() => {
+    remaining--;
+    if (remaining <= 0) {
+      clearInterval(retryTimer);
+      checkHealth();
+    } else {
+      setStatus("yellow", `Rate limit: ${remaining}s`);
+    }
+  }, 1000);
+}
+
+// ── Init ────────────────────────────────────────────────────────────────────
+(async function init() {
+  await checkHealth();
+  await loadModels();
+  document.getElementById("user-input").focus();
+})();
+</script>
+</body>
+</html>
