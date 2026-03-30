@@ -192,10 +192,15 @@ def get_client_ip(request: Request) -> str:
 # Endpoints
 # ---------------------------------------------------------------------------
 
+_BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
 @app.get("/")
 async def index():
     """Serve the web chat UI."""
-    html_path = os.path.join(os.path.dirname(__file__), "web", "index.html")
+    html_path = os.path.join(_BASE_DIR, "web", "index.html")
+    if not os.path.exists(html_path):
+        raise HTTPException(status_code=500, detail=f"UI file not found: {html_path}")
     return FileResponse(html_path, media_type="text/html")
 
 
