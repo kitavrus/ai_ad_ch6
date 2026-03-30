@@ -315,6 +315,60 @@ python3 script.py --profile Igor
 Инструменты для работы с локальными моделями через [Ollama](https://ollama.com/).
 Подробная документация с примерами: [llm_local/GUIDE.md](llm_local/GUIDE.md)
 
+#### Web Chat Interface (FastAPI + Ollama)
+
+**HTTP API + веб-интерфейс для удалённых серверов**
+
+Пакет `api_server.py` развёртывает FastAPI-сервер на порту 8080 с веб-чатом и HTTP API.
+
+**Развёртывание на удалённом сервере (день 31):**
+```bash
+# На сервере: установить Ollama и Python-зависимости
+ollama serve
+ollama pull qwen2.5:3b   # ~2 GB, оптимально для 4-8 GB RAM
+
+cd /path/to/llm_local
+python3 -m venv venv && source venv/bin/activate
+pip install -r requirements_api.txt
+
+# Создать systemd-сервис для API
+sudo cat > /etc/systemd/system/llm-api.service << 'EOF'
+[Unit]
+Description=LLM Chat API Server
+After=network.target ollama.service
+Requires=ollama.service
+
+[Service]
+User=debian
+WorkingDirectory=/path/to/llm_local
+EnvironmentFile=/path/to/llm_local/.env
+ExecStart=/path/to/venv/bin/python api_server.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now llm-api
+```
+
+**API эндпоинты:**
+- `GET /health` — статус сервера + доступность Ollama
+- `GET /models` — список загруженных моделей
+- `POST /chat` — отправить сообщение (JSON: `message`, `session_id`, `model`, `temperature`, `max_tokens`)
+- `GET /session/{session_id}` — история сессии
+- `DELETE /session/{session_id}` — очистить сессию
+
+**Пример запроса:**
+```bash
+curl -X POST http://server:8080/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"Hello","session_id":"user1","model":"qwen2.5:3b","temperature":0.7}'
+```
+
+**Веб-интерфейс:** `http://server:8080/` (HTML + JS, подключается к API автоматически)
+
 #### `main.py` — интерактивный чат с пресетами и бенчмарком
 
 Полнофункциональный CLI-чат с ролевыми пресетами, настройкой параметров генерации,
@@ -552,9 +606,24 @@ cd llm_mcp/weather       && python -m pytest tests/ -v
 
 ---
 
+## Развёртывание на удалённом сервере
+
+Для запуска веб-чата с локальной LLM на удалённом сервере требуется:
+- **CPU:** 2+ ядра
+- **RAM:** 4 GB минимум (для qwen2.5:3b ~2 GB + OS + API), 8+ GB рекомендуется
+- **Диск:** 5+ GB для модели + логов
+- **Порт:** 8080 для API (по умолчанию)
+
+**Пример:** 185.146.1.116:8080 — боевой сервер с qwen2.5:3b, развёрнут через systemd.
+
+Детали: см. раздел "Web Chat Interface (FastAPI + Ollama)" выше.
+
+---
+
 ## Требования
 
 - Python 3.10+
 - `faiss-cpu`, `numpy` — для RAG-индексирования
 - API-ключ для OpenAI-совместимого сервиса (чатбот, по умолчанию `inception/mercury-coder`)
 - API-ключ для микросервисов (задаётся в `.env` каждого сервиса)
+- **Для llm_local/api_server.py:** `fastapi>=0.110.0`, `uvicorn[standard]>=0.27.0`, `httpx>=0.27.0`, `pydantic>=2.0.0`
