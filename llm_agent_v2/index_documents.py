@@ -13,8 +13,8 @@ import os
 import sys
 from pathlib import Path
 
-# Ensure the llm_agent package is importable when run directly
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# Ensure the llm_agent_v2 package is importable when run directly
+sys.path.insert(0, str(Path(__file__).parent))
 
 from dotenv import load_dotenv
 
