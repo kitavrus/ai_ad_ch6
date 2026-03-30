@@ -309,7 +309,7 @@
   <div class="field-group">
     <div class="field-label">Модель (введи вручную или выбери из списка)</div>
     <input type="text" id="model-select" list="models-datalist"
-           placeholder="qwen3:14b" value="qwen3:14b" autocomplete="off">
+           placeholder="qwen2.5:3b" value="qwen2.5:3b" autocomplete="off">
     <datalist id="models-datalist"></datalist>
   </div>
 
@@ -616,6 +616,7 @@ function startRetryCountdown(seconds) {
 
 // ── Init ────────────────────────────────────────────────────────────────────
 (async function init() {
+  document.getElementById('api-url').value = window.location.origin;
   await checkHealth();
   await loadModels();
   document.getElementById("user-input").focus();
