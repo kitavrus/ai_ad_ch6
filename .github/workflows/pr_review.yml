@@ -1,0 +1,79 @@
+name: AI Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  ai-review:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Get diff and changed files
+        run: |
+          git diff origin/${{ github.base_ref }}...HEAD > /tmp/diff.patch
+          git diff --name-only origin/${{ github.base_ref }}...HEAD > /tmp/changed_files.txt
+          echo "Diff size: $(wc -c < /tmp/diff.patch) bytes"
+          echo "Changed files:"
+          cat /tmp/changed_files.txt
+
+      - name: Send to AI review server
+        env:
+          REVIEW_SECRET: ${{ secrets.REVIEW_SECRET }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 - <<'EOF'
+          import json, urllib.request, urllib.error, pathlib, sys, os
+
+          diff = pathlib.Path("/tmp/diff.patch").read_text(errors="replace")
+          files_raw = pathlib.Path("/tmp/changed_files.txt").read_text().strip()
+          files = [f for f in files_raw.splitlines() if f]
+
+          if not diff.strip():
+              print("Empty diff — skipping review.")
+              sys.exit(0)
+
+          payload = json.dumps({
+              "diff": diff,
+              "changed_files": files,
+              "pr_number": ${{ github.event.number }},
+              "repo": "${{ github.repository }}",
+              "github_token": os.environ["GH_TOKEN"],
+          }).encode()
+
+          req = urllib.request.Request(
+              "http://185.146.1.116:8080/pr-review",
+              data=payload,
+              headers={
+                  "Content-Type": "application/json",
+                  "X-Review-Token": os.environ.get("REVIEW_SECRET", ""),
+              },
+              method="POST",
+          )
+
+          try:
+              resp = urllib.request.urlopen(req, timeout=180)
+              result = json.loads(resp.read())
+              print("Review posted successfully!")
+              if result.get("comment_url"):
+                  print(f"Comment URL: {result['comment_url']}")
+              if result.get("has_blocking_issues"):
+                  print("", file=sys.stderr)
+                  print("❌ REVIEW FAILED: TODO/FIXME/HACK markers found in diff.", file=sys.stderr)
+                  for issue in result.get("blocking_issues", []):
+                      print(f"  - {issue}", file=sys.stderr)
+                  sys.exit(1)
+          except urllib.error.HTTPError as e:
+              body = e.read().decode(errors="replace")
+              print(f"Server error {e.code}: {body}", file=sys.stderr)
+              sys.exit(1)
+          except Exception as e:
+              print(f"Request failed: {e}", file=sys.stderr)
+              sys.exit(1)
+          EOF
