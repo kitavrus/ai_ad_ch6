@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="b35a12be-6e10-48e6-a4fd-76dfb149614a" name="Changes" comment="day 31">
+    <list default="true" id="b35a12be-6e10-48e6-a4fd-76dfb149614a" name="Changes" comment="day 32">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -68,7 +68,7 @@
     "RunOnceActivity.typescript.service.memoryLimit.init": "true",
     "SHARE_PROJECT_CONFIGURATION_FILES": "true",
     "ai.playground.ignore.import.keys.banner.in.settings": "true",
-    "git-widget-placeholder": "test/pr-review-todo-check",
+    "git-widget-placeholder": "test/clean-review",
     "kotlin-language-version-configured": "true",
     "last_opened_file_path": "/Users/igorpotema/mycode/ai_ad_ch6/llm_agent_v2",
     "node.js.detected.package.eslint": "true",
@@ -444,7 +444,15 @@
       <option name="project" value="LOCAL" />
       <updated>1774900580703</updated>
     </task>
-    <option name="localTasksCounter" value="21" />
+    <task id="LOCAL-00021" summary="day 32">
+      <option name="closed" value="true" />
+      <created>1775039434269</created>
+      <option name="number" value="00021" />
+      <option name="presentableId" value="LOCAL-00021" />
+      <option name="project" value="LOCAL" />
+      <updated>1775039434269</updated>
+    </task>
+    <option name="localTasksCounter" value="22" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -481,7 +489,8 @@
     <MESSAGE value="day 28 local llm + rag" />
     <MESSAGE value="day 29" />
     <MESSAGE value="day 31" />
-    <option name="LAST_COMMIT_MESSAGE" value="day 31" />
+    <MESSAGE value="day 32" />
+    <option name="LAST_COMMIT_MESSAGE" value="day 32" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/ai_ad_ch6$main__1_.coverage" NAME="main (1) Coverage Results" MODIFIED="1773656293326" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/api_for_mcp/scheduler" />

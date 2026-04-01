@@ -10,7 +10,7 @@
 
 ```
 llm_agent/          ← CLI-чатбот v1 (Python, основной компонент)
-llm_agent_v2/       ← CLI-агент v2 (async, встроенный RAG, MCPManager)
+llm_agent_v2/       ← CLI-агент v2 (async, встроенный RAG, MCPManager, PR Review)
      │
      │  Model Context Protocol (stdio)
      ▼
@@ -21,6 +21,8 @@ llm_mcp/            ← MCP-серверы (обёртки над API + git-ко
 api_for_mcp/        ← FastAPI-микросервисы
 
 llm_local/          ← Локальный LLM-чат + RAG через Ollama (автономный)
+
+.github/workflows/  ← CI/CD: AI PR Review (pr_review.yml)
 ```
 
 ---
@@ -152,19 +154,83 @@ dialogues/
   - Системный промпт роли «project helper»
 - **`_run_with_tools()`** — цикл вызова инструментов, до 10 раундов
 
+#### AI PR Review Pipeline (автоматическое ревью кода)
+
+Автоматическое AI-ревью при открытии/обновлении Pull Request.
+GitHub Action отправляет diff на удалённый сервер, сервер запускает RAG + LLM-анализ
+и постит структурированный комментарий в PR.
+
+**Архитектура:**
+```
+PR opened/updated
+       │
+       ▼
+GitHub Action (.github/workflows/pr_review.yml)
+  ├── git diff → diff.patch
+  ├── git diff --name-only → changed_files
+  └── POST http://<server>:8080/pr-review
+              │
+              ▼
+       FastAPI /pr-review endpoint
+         ├── Validate X-Review-Token
+         ├── RAG: запрос к rag_index/fixed.faiss
+         ├── LLM: structured review
+         ├── TODO/FIXME/HACK detection
+         ├── POST GitHub API → comment in PR
+         └── Return { review, has_blocking_issues }
+```
+
+**Что делает ревью:**
+- **Потенциальные баги** — null-pointer, off-by-one, необработанные исключения, гонки
+- **Архитектурные проблемы** — coupling, нарушения SOLID, несогласованные паттерны
+- **Рекомендации** — именование, тесты, edge-cases, производительность
+- **Блокирующие проблемы** — `TODO` / `FIXME` / `HACK` в добавленных строках → Action завершается с ошибкой
+
+**Endpoint:** `POST /pr-review`
+
+| Поле запроса | Тип | Описание |
+|-------------|-----|----------|
+| `diff` | `str` | Полный git diff |
+| `changed_files` | `list[str]` | Список изменённых файлов |
+| `pr_number` | `int` | Номер PR |
+| `repo` | `str` | `owner/repo` |
+| `github_token` | `str` | GitHub токен для постинга комментария |
+
+| Поле ответа | Тип | Описание |
+|-------------|-----|----------|
+| `review` | `str` | Текст ревью (Markdown) |
+| `comment_url` | `str\|null` | URL комментария в GitHub |
+| `has_blocking_issues` | `bool` | Есть ли TODO/FIXME/HACK |
+| `blocking_issues` | `list[str]` | Список блокирующих строк |
+
+**Защита:** заголовок `X-Review-Token` проверяется против переменной `REVIEW_SECRET`.
+
+**GitHub Secrets:**
+
+| Name | Описание |
+|------|----------|
+| `REVIEW_SECRET` | Shared secret для аутентификации endpoint |
+
+Подробное руководство по настройке: [PR_REVIEW_SETUP.md](llm_agent_v2/PR_REVIEW_SETUP.md)
+
 #### Структура пакета
 
 ```
 llm_agent_v2/
-  script.py          # Точка входа (async main)
-  config.py          # Константы
-  llm_client.py      # OpenAI-совместимый клиент
-  mcp_manager.py     # Async MCP-менеджер
-  index_documents.py # Индексация документов для RAG
-  rag/               # RAG-пайплайн: pipeline, chunking, embeddings,
-                     #   index, retriever, reranker, query_rewrite, compare
-  rag_index/         # Готовые FAISS-индексы
-  HELP_COMMAND.md    # Документация команды /help
+  script.py            # Точка входа (async main)
+  config.py            # Константы
+  llm_client.py        # OpenAI-совместимый клиент
+  mcp_manager.py       # Async MCP-менеджер
+  pr_review.py         # AI PR Review pipeline (RAG + LLM → structured review)
+  index_documents.py   # Индексация документов для RAG
+  rag/                 # RAG-пайплайн: pipeline, chunking, embeddings,
+                       #   index, retriever, reranker, query_rewrite, compare
+  rag_index/           # Готовые FAISS-индексы
+  web/
+    api_server.py      # FastAPI: /chat, /pr-review, /health, /models, /session
+    index.html         # Веб-интерфейс чата
+  HELP_COMMAND.md      # Документация команды /help
+  PR_REVIEW_SETUP.md   # Руководство по настройке PR Review
 ```
 
 #### Запуск
@@ -402,9 +468,10 @@ sudo systemctl enable --now llm-api
 ```
 
 **API эндпоинты:**
-- `GET /health` — статус сервера + доступность Ollama
-- `GET /models` — список загруженных моделей
+- `GET /health` — статус сервера + доступность API + RAG
+- `GET /models` — список доступных моделей
 - `POST /chat` — отправить сообщение (JSON: `message`, `session_id`, `model`, `temperature`, `max_tokens`)
+- `POST /pr-review` — AI-ревью PR (JSON: `diff`, `changed_files`, `pr_number`, `repo`, `github_token`)
 - `GET /session/{session_id}` — история сессии
 - `DELETE /session/{session_id}` — очистить сессию
 
@@ -681,9 +748,12 @@ cd llm_mcp/git-commands  && python -m pytest tests/ -v
 - **Диск:** 5+ GB для модели + логов
 - **Порт:** 8080 для API (по умолчанию)
 
-**Пример:** 185.146.1.116:8080 — боевой сервер с qwen2.5:3b, развёрнут через systemd.
+**Пример:** 185.146.1.116:8080 — боевой сервер, развёрнут через systemd (`llm-api.service`).
 
-Детали: см. раздел "Web Chat Interface (FastAPI + Ollama)" выше.
+На сервере также работает endpoint `/pr-review` для автоматического AI-ревью PR
+(см. [PR_REVIEW_SETUP.md](llm_agent_v2/PR_REVIEW_SETUP.md)).
+
+Детали: см. раздел "Web Chat Interface (FastAPI + Ollama)" и "AI PR Review Pipeline" выше.
 
 ---
 
