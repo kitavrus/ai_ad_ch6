@@ -1,0 +1,34 @@
+[
+  {
+    "id": "R001",
+    "pattern": "TODO",
+    "message": "Найдены TODO-комментарии — не забудьте реализовать",
+    "severity": "warning"
+  },
+  {
+    "id": "R002",
+    "pattern": "FIXME",
+    "message": "Найдены FIXME-метки — требуется исправление",
+    "severity": "error"
+  },
+  {
+    "id": "R003",
+    "pattern": "^import os$",
+    "message": "Используйте pathlib вместо os для работы с путями",
+    "severity": "warning",
+    "file_pattern": "*.py"
+  },
+  {
+    "id": "R004",
+    "pattern": "print\\(",
+    "message": "Используйте logging вместо print() в production-коде",
+    "severity": "warning",
+    "file_pattern": "*.py"
+  },
+  {
+    "id": "R005",
+    "pattern": "password\\s*=\\s*[\"'][^\"']+[\"']",
+    "message": "Возможно хардкод пароля — используйте env-переменные",
+    "severity": "error"
+  }
+]

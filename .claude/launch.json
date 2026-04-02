@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "LLM Agent Web API",
-      "runtimeExecutable": "/opt/homebrew/bin/python3.14",
+      "runtimeExecutable": "/Users/igorpotema/mycode/ai_ad_ch6/.venv/bin/python",
       "runtimeArgs": ["-m", "uvicorn", "llm_agent_v2.web.api_server:app", "--host", "0.0.0.0", "--port", "8081"],
       "port": 8081
     }

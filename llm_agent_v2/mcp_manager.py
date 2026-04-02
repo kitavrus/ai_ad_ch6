@@ -13,8 +13,9 @@ _ROOT = Path(__file__).parent.parent
 
 # (имя, путь к серверному файлу)
 _SERVERS: list[tuple[str, Path]] = [
-    ("git_commands", _ROOT / "llm_mcp/git-commands/git_server.py"),
-    ("crm_tasks",    _ROOT / "llm_mcp/crm_with_task/crm_server.py"),
+    ("git_commands",  _ROOT / "llm_mcp/git-commands/git_server.py"),
+    ("crm_tasks",     _ROOT / "llm_mcp/crm_with_task/crm_server.py"),
+    ("file_manager",  _ROOT / "llm_mcp/file-manager/file_manager_server.py"),
 ]
 
 

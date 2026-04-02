@@ -295,6 +295,9 @@ async def list_models():
             data = r.json()
             models = [m["id"] for m in data.get("data", [])]
             if models:
+                # Put DEFAULT_MODEL first so the UI picks it as the default
+                if DEFAULT_MODEL in models:
+                    models = [DEFAULT_MODEL] + [m for m in models if m != DEFAULT_MODEL]
                 return ModelsResponse(models=models)
     except Exception:
         pass
@@ -320,7 +323,19 @@ async def chat(req: ChatRequest, client_ip: str = Depends(get_client_ip)):
     context = messages[-MAX_CONTEXT_MESSAGES:]
 
     # RAG lookup — inject relevant chunks into system prompt
-    system_prompt = req.system_prompt or ""
+    _DEFAULT_SYSTEM_PROMPT = (
+        "Ты — умный ассистент с доступом к инструментам.\n\n"
+        "## Файловый менеджер (fm_* инструменты)\n"
+        "Используй эти инструменты когда задача связана с файлами проекта:\n"
+        "- fm_read_file(path) — прочитать файл\n"
+        "- fm_list_files(path?, pattern?) — список файлов с glob-фильтром\n"
+        "- fm_search_in_files(query, path?, pattern?, is_regex?) — поиск по содержимому файлов\n"
+        "- fm_write_file(path, content) — создать/перезаписать файл\n"
+        "- fm_patch_file(path, old_string, new_string) — заменить фрагмент в файле\n"
+        "- fm_check_invariants(path?) — проверить файлы на соответствие rules.json\n"
+        "Все пути относительны корню проекта FILE_MANAGER_ROOT.\n"
+    )
+    system_prompt = req.system_prompt or _DEFAULT_SYSTEM_PROMPT
     if _retriever is not None:
         try:
             chunks = _retriever.search(req.message, top_k=3)

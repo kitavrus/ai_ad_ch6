@@ -1,10 +1,24 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="b35a12be-6e10-48e6-a4fd-76dfb149614a" name="Changes" comment="day 33 mcp crm">
+    <list default="true" id="b35a12be-6e10-48e6-a4fd-76dfb149614a" name="Changes" comment="day 33 update README.md">
+      <change afterPath="$PROJECT_DIR$/.claude/commands/spec-interview.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/PLAN.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/llm_mcp/file-manager/CHANGELOG.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/llm_mcp/file-manager/README.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/llm_mcp/file-manager/client.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/llm_mcp/file-manager/file_manager_server.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/llm_mcp/file-manager/requirements.txt" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/llm_mcp/file-manager/rules.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/llm_mcp/file-manager/scenarios.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/llm_mcp/file-manager/tests/__init__.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/llm_mcp/file-manager/tests/conftest.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/llm_mcp/file-manager/tests/test_file_manager.py" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/rules.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.claude/launch.json" beforeDir="false" afterPath="$PROJECT_DIR$/.claude/launch.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/llm_agent_v2/mcp_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent_v2/mcp_manager.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/llm_agent_v2/web/api_server.py" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent_v2/web/api_server.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/llm_agent_v2/web/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent_v2/web/index.html" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -475,7 +489,23 @@
       <option name="project" value="LOCAL" />
       <updated>1775127066337</updated>
     </task>
-    <option name="localTasksCounter" value="24" />
+    <task id="LOCAL-00024" summary="day 33 mcp crm">
+      <option name="closed" value="true" />
+      <created>1775127810710</created>
+      <option name="number" value="00024" />
+      <option name="presentableId" value="LOCAL-00024" />
+      <option name="project" value="LOCAL" />
+      <updated>1775127810710</updated>
+    </task>
+    <task id="LOCAL-00025" summary="day 33 update README.md">
+      <option name="closed" value="true" />
+      <created>1775127869816</created>
+      <option name="number" value="00025" />
+      <option name="presentableId" value="LOCAL-00025" />
+      <option name="project" value="LOCAL" />
+      <updated>1775127869816</updated>
+    </task>
+    <option name="localTasksCounter" value="26" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -514,7 +544,8 @@
     <MESSAGE value="day 31" />
     <MESSAGE value="day 32" />
     <MESSAGE value="day 33 mcp crm" />
-    <option name="LAST_COMMIT_MESSAGE" value="day 33 mcp crm" />
+    <MESSAGE value="day 33 update README.md" />
+    <option name="LAST_COMMIT_MESSAGE" value="day 33 update README.md" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/ai_ad_ch6$main__1_.coverage" NAME="main (1) Coverage Results" MODIFIED="1773656293326" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/api_for_mcp/scheduler" />
