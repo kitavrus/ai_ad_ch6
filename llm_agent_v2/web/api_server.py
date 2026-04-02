@@ -261,7 +261,7 @@ async def health():
     """Check server and API reachability."""
     api_ok = False
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=3.0) as client:
             r = await client.get(
                 BASE_URL.rstrip("/") + "/models",
                 headers={"Authorization": f"Bearer {os.getenv('API_KEY', '')}"},

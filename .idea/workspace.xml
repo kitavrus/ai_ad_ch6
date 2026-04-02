@@ -2,18 +2,9 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="b35a12be-6e10-48e6-a4fd-76dfb149614a" name="Changes" comment="day 33 mcp crm">
-      <change afterPath="$PROJECT_DIR$/.claude/launch.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/USE_CASES.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/llm_agent_v2/support_docs/crm_guide.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/llm_agent_v2/mcp_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent_v2/mcp_manager.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/llm_agent_v2/rag_index/fixed.faiss" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent_v2/rag_index/fixed.faiss" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/llm_agent_v2/rag_index/fixed_metadata.json" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent_v2/rag_index/fixed_metadata.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/llm_agent_v2/rag_index/structure.faiss" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent_v2/rag_index/structure.faiss" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/llm_agent_v2/rag_index/structure_metadata.json" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent_v2/rag_index/structure_metadata.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/llm_agent_v2/support_server.py" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/llm_agent_v2/web/api_server.py" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent_v2/web/api_server.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/llm_mcp/crm_with_task/tasks.json" beforeDir="false" afterPath="$PROJECT_DIR$/llm_mcp/crm_with_task/tasks.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/llm_agent_v2/web/index.html" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent_v2/web/index.html" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -476,7 +467,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775124012285</updated>
     </task>
-    <option name="localTasksCounter" value="23" />
+    <task id="LOCAL-00023" summary="day 33 mcp crm">
+      <option name="closed" value="true" />
+      <created>1775127066337</created>
+      <option name="number" value="00023" />
+      <option name="presentableId" value="LOCAL-00023" />
+      <option name="project" value="LOCAL" />
+      <updated>1775127066337</updated>
+    </task>
+    <option name="localTasksCounter" value="24" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
