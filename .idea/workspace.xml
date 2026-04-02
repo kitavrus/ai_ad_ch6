@@ -1,8 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="ChangeListManager">
-    <list default="true" id="b35a12be-6e10-48e6-a4fd-76dfb149614a" name="Changes" comment="day 32">
+    <list default="true" id="b35a12be-6e10-48e6-a4fd-76dfb149614a" name="Changes" comment="day 33 mcp crm">
+      <change afterPath="$PROJECT_DIR$/.claude/launch.json" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/USE_CASES.md" afterDir="false" />
+      <change afterPath="$PROJECT_DIR$/llm_agent_v2/support_docs/crm_guide.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/llm_agent_v2/mcp_manager.py" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent_v2/mcp_manager.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/llm_agent_v2/rag_index/fixed.faiss" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent_v2/rag_index/fixed.faiss" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/llm_agent_v2/rag_index/fixed_metadata.json" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent_v2/rag_index/fixed_metadata.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/llm_agent_v2/rag_index/structure.faiss" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent_v2/rag_index/structure.faiss" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/llm_agent_v2/rag_index/structure_metadata.json" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent_v2/rag_index/structure_metadata.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/llm_agent_v2/support_server.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/llm_agent_v2/web/api_server.py" beforeDir="false" afterPath="$PROJECT_DIR$/llm_agent_v2/web/api_server.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/llm_mcp/crm_with_task/tasks.json" beforeDir="false" afterPath="$PROJECT_DIR$/llm_mcp/crm_with_task/tasks.json" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -10,6 +21,11 @@
     <option name="LAST_RESOLUTION" value="IGNORE" />
   </component>
   <component name="Git.Settings">
+    <option name="RECENT_BRANCH_BY_REPOSITORY">
+      <map>
+        <entry key="$PROJECT_DIR$" value="main" />
+      </map>
+    </option>
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
   <component name="GitHubPullRequestSearchHistory">{
@@ -37,49 +53,49 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent">{
-  &quot;keyToString&quot;: {
-    &quot;ASKED_SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
-    &quot;FastAPI.Scheduler.executor&quot;: &quot;Run&quot;,
-    &quot;FastAPI.Unnamed.executor&quot;: &quot;Run&quot;,
-    &quot;FastAPI.api-weather.executor&quot;: &quot;Run&quot;,
-    &quot;ModuleVcsDetector.initialDetectionPerformed&quot;: &quot;true&quot;,
-    &quot;Python tests.pytest in test_main.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.pytest in test_save.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python tests.pytest in test_weather_server.py.executor&quot;: &quot;Run&quot;,
-    &quot;Python.api_server.executor&quot;: &quot;Run&quot;,
-    &quot;Python.compare_local_cloud.executor&quot;: &quot;Run&quot;,
-    &quot;Python.main (1).executor&quot;: &quot;Run&quot;,
-    &quot;Python.main (2).executor&quot;: &quot;Run&quot;,
-    &quot;Python.main (3).executor&quot;: &quot;Run&quot;,
-    &quot;Python.main.executor&quot;: &quot;Run&quot;,
-    &quot;Python.pdf_server.executor&quot;: &quot;Run&quot;,
-    &quot;Python.rag_local.executor&quot;: &quot;Run&quot;,
-    &quot;Python.save_server.executor&quot;: &quot;Run&quot;,
-    &quot;Python.scheduler_server.executor&quot;: &quot;Run&quot;,
-    &quot;Python.script (1).executor&quot;: &quot;Run&quot;,
-    &quot;Python.script.executor&quot;: &quot;Run&quot;,
-    &quot;Python.uvicorn main:app --reload.executor&quot;: &quot;Run&quot;,
-    &quot;Python.weather.executor&quot;: &quot;Run&quot;,
-    &quot;Python.weather_server.executor&quot;: &quot;Run&quot;,
-    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
-    &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
-    &quot;SHARE_PROJECT_CONFIGURATION_FILES&quot;: &quot;true&quot;,
-    &quot;ai.playground.ignore.import.keys.banner.in.settings&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;test/clean-review&quot;,
-    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
-    &quot;last_opened_file_path&quot;: &quot;/Users/igorpotema/mycode/ai_ad_ch6/llm_agent_v2&quot;,
-    &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
-    &quot;node.js.selected.package.eslint&quot;: &quot;(autodetect)&quot;,
-    &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
-    &quot;project.structure.last.edited&quot;: &quot;Modules&quot;,
-    &quot;project.structure.proportion&quot;: &quot;0.0&quot;,
-    &quot;project.structure.side.proportion&quot;: &quot;0.0&quot;,
-    &quot;vue.rearranger.settings.migration&quot;: &quot;true&quot;
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ASKED_SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "FastAPI.Scheduler.executor": "Run",
+    "FastAPI.Unnamed.executor": "Run",
+    "FastAPI.api-weather.executor": "Run",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "Python tests.pytest in test_main.py.executor": "Run",
+    "Python tests.pytest in test_save.py.executor": "Run",
+    "Python tests.pytest in test_weather_server.py.executor": "Run",
+    "Python.api_server.executor": "Run",
+    "Python.compare_local_cloud.executor": "Run",
+    "Python.main (1).executor": "Run",
+    "Python.main (2).executor": "Run",
+    "Python.main (3).executor": "Run",
+    "Python.main.executor": "Run",
+    "Python.pdf_server.executor": "Run",
+    "Python.rag_local.executor": "Run",
+    "Python.save_server.executor": "Run",
+    "Python.scheduler_server.executor": "Run",
+    "Python.script (1).executor": "Run",
+    "Python.script.executor": "Run",
+    "Python.uvicorn main:app --reload.executor": "Run",
+    "Python.weather.executor": "Run",
+    "Python.weather_server.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "SHARE_PROJECT_CONFIGURATION_FILES": "true",
+    "ai.playground.ignore.import.keys.banner.in.settings": "true",
+    "git-widget-placeholder": "main",
+    "kotlin-language-version-configured": "true",
+    "last_opened_file_path": "/Users/igorpotema/mycode/ai_ad_ch6/llm_agent_v2",
+    "node.js.detected.package.eslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "project.structure.last.edited": "Modules",
+    "project.structure.proportion": "0.0",
+    "project.structure.side.proportion": "0.0",
+    "vue.rearranger.settings.migration": "true"
   }
-}</component>
+}]]></component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="$PROJECT_DIR$/llm_agent_v2" />
@@ -452,7 +468,15 @@
       <option name="project" value="LOCAL" />
       <updated>1775039434269</updated>
     </task>
-    <option name="localTasksCounter" value="22" />
+    <task id="LOCAL-00022" summary="day 33 mcp crm">
+      <option name="closed" value="true" />
+      <created>1775124012285</created>
+      <option name="number" value="00022" />
+      <option name="presentableId" value="LOCAL-00022" />
+      <option name="project" value="LOCAL" />
+      <updated>1775124012285</updated>
+    </task>
+    <option name="localTasksCounter" value="23" />
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
@@ -490,7 +514,8 @@
     <MESSAGE value="day 29" />
     <MESSAGE value="day 31" />
     <MESSAGE value="day 32" />
-    <option name="LAST_COMMIT_MESSAGE" value="day 32" />
+    <MESSAGE value="day 33 mcp crm" />
+    <option name="LAST_COMMIT_MESSAGE" value="day 33 mcp crm" />
   </component>
   <component name="com.intellij.coverage.CoverageDataManagerImpl">
     <SUITE FILE_PATH="coverage/ai_ad_ch6$main__1_.coverage" NAME="main (1) Coverage Results" MODIFIED="1773656293326" SOURCE_PROVIDER="com.intellij.coverage.DefaultCoverageFileProvider" RUNNER="coverage.py" COVERAGE_BY_TEST_ENABLED="false" COVERAGE_TRACING_ENABLED="false" WORKING_DIRECTORY="$PROJECT_DIR$/api_for_mcp/scheduler" />

@@ -4,7 +4,7 @@
     "title": "Связаться с клиентом Иванов",
     "description": "Перезвонить по вопросу договора",
     "assignee": "Анна",
-    "status": "NEW",
+    "status": "IN_PROCESS",
     "priority": "HIGH",
     "created_at": "2026-04-01T19:32:46.552112+00:00"
   },
@@ -43,5 +43,23 @@
     "status": "DONE",
     "priority": "HIGH",
     "created_at": "2026-03-31T20:32:46.552154+00:00"
+  },
+  "e982d4f8-7aaa-4709-bdf6-fccaa0fcad29": {
+    "id": "e982d4f8-7aaa-4709-bdf6-fccaa0fcad29",
+    "title": "Тестирование веб-интерфейса",
+    "description": null,
+    "assignee": "Игорь",
+    "status": "NEW",
+    "priority": "HIGH",
+    "created_at": "2026-04-02T10:08:23.159578+00:00"
+  },
+  "a99fec5f-5704-48b8-8ad6-9c5f33d475ac": {
+    "id": "a99fec5f-5704-48b8-8ad6-9c5f33d475ac",
+    "title": "Тест интеграции MCP",
+    "description": null,
+    "assignee": "Тестер",
+    "status": "NEW",
+    "priority": "HIGH",
+    "created_at": "2026-04-02T10:17:39.712825+00:00"
   }
 }

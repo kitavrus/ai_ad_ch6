@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "LLM Agent Web API",
+      "runtimeExecutable": "/opt/homebrew/bin/python3.14",
+      "runtimeArgs": ["-m", "uvicorn", "llm_agent_v2.web.api_server:app", "--host", "0.0.0.0", "--port", "8081"],
+      "port": 8081
+    }
+  ]
+}

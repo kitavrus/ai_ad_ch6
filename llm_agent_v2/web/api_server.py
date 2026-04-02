@@ -21,6 +21,7 @@ import os
 import time
 import uuid
 from collections import defaultdict
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Optional
 
@@ -30,8 +31,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
+from llm_agent_v2.agent_utils import run_with_tools
 from llm_agent_v2.config import BASE_URL, DEFAULT_MODEL, SessionConfig
 from llm_agent_v2.llm_client import LLMClient
+from llm_agent_v2.mcp_manager import MCPManager
 
 # ---------------------------------------------------------------------------
 # Config
@@ -92,6 +95,7 @@ class HealthResponse(BaseModel):
     api_reachable: bool
     api_url: str
     rag_enabled: bool
+    mcp_tools: list[str] = []
     active_sessions: int
     rate_limit_per_minute: int
     max_context_messages: int
@@ -200,10 +204,24 @@ class SessionManager:
 # App setup
 # ---------------------------------------------------------------------------
 
+_mcp: MCPManager | None = None
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    global _mcp
+    _mcp = MCPManager()
+    await _mcp.connect_all()
+    print(f"[MCP] Tools loaded: {[t['function']['name'] for t in _mcp.tools_openai]}")
+    yield
+    await _mcp.close()
+
+
 app = FastAPI(
     title="LLM Agent Web API",
     description="HTTP API for llm_agent_v2 chat with RAG support",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -257,6 +275,7 @@ async def health():
         api_reachable=api_ok,
         api_url=BASE_URL,
         rag_enabled=_retriever is not None,
+        mcp_tools=[t["function"]["name"] for t in (_mcp.tools_openai if _mcp else [])],
         active_sessions=session_mgr.count(),
         rate_limit_per_minute=RATE_LIMIT_PER_MINUTE,
         max_context_messages=MAX_CONTEXT_MESSAGES,
@@ -321,7 +340,10 @@ async def chat(req: ChatRequest, client_ip: str = Depends(get_client_ip)):
     llm = LLMClient(config=config)
 
     try:
-        assistant_msg = await asyncio.to_thread(llm.chat, context)
+        if _mcp and _mcp.tools_openai:
+            assistant_msg = await run_with_tools(llm, _mcp, context)
+        else:
+            assistant_msg = await asyncio.to_thread(llm.chat, context)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"LLM error: {e}")
 

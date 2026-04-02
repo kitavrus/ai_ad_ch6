@@ -1,6 +1,7 @@
 """Менеджер MCP-серверов: запускает серверы, собирает инструменты, маршрутизирует вызовы."""
 
 import os
+import sys
 from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any
@@ -13,13 +14,15 @@ _ROOT = Path(__file__).parent.parent
 # (имя, путь к серверному файлу)
 _SERVERS: list[tuple[str, Path]] = [
     ("git_commands", _ROOT / "llm_mcp/git-commands/git_server.py"),
+    ("crm_tasks",    _ROOT / "llm_mcp/crm_with_task/crm_server.py"),
 ]
 
 
 class MCPManager:
     """Управляет подключениями ко всем MCP-серверам."""
 
-    def __init__(self) -> None:
+    def __init__(self, servers: list[tuple[str, Path]] | None = None) -> None:
+        self._servers = servers if servers is not None else list(_SERVERS)
         self._stack = AsyncExitStack()
         self._sessions: dict[str, ClientSession] = {}  # server_name → session
         self._tool_to_server: dict[str, str] = {}       # tool_name → server_name
@@ -28,9 +31,9 @@ class MCPManager:
     async def connect_all(self) -> None:
         """Запускает все MCP-серверы и инициализирует сессии."""
         await self._stack.__aenter__()
-        for name, path in _SERVERS:
+        for name, path in self._servers:
             try:
-                params = StdioServerParameters(command="python3", args=[str(path)])
+                params = StdioServerParameters(command=sys.executable, args=[str(path)])
                 devnull = open(os.devnull, "w")
                 read, write = await self._stack.enter_async_context(
                     stdio_client(params, errlog=devnull)
