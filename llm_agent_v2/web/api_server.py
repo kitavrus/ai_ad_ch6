@@ -324,16 +324,23 @@ async def chat(req: ChatRequest, client_ip: str = Depends(get_client_ip)):
 
     # RAG lookup — inject relevant chunks into system prompt
     _DEFAULT_SYSTEM_PROMPT = (
-        "Ты — умный ассистент с доступом к инструментам.\n\n"
-        "## Файловый менеджер (fm_* инструменты)\n"
-        "Используй эти инструменты когда задача связана с файлами проекта:\n"
-        "- fm_read_file(path) — прочитать файл\n"
-        "- fm_list_files(path?, pattern?) — список файлов с glob-фильтром\n"
-        "- fm_search_in_files(query, path?, pattern?, is_regex?) — поиск по содержимому файлов\n"
-        "- fm_write_file(path, content) — создать/перезаписать файл\n"
-        "- fm_patch_file(path, old_string, new_string) — заменить фрагмент в файле\n"
-        "- fm_check_invariants(path?) — проверить файлы на соответствие rules.json\n"
-        "Все пути относительны корню проекта FILE_MANAGER_ROOT.\n"
+        "You are a file-manager assistant. Use fm_* tools for all file tasks.\n\n"
+        "STRICT RULES:\n"
+        "1. SEARCH request → call fm_search_in_files immediately, never answer from memory.\n"
+        "2. GENERATE FILE request (CHANGELOG, README, report) → sequence:\n"
+        "   a) fm_list_files(path='.', pattern='**/*.py')  # count files\n"
+        "   b) fm_search_in_files(query='@mcp.tool()', pattern='**/*.py')  # find tools\n"
+        "   c) fm_write_file(path=..., content=...)  # write with real data only\n"
+        "   DO NOT call fm_write_file before calling fm_search_in_files at least once.\n"
+        "3. After fm_write_file: show diff if non-null, else say 'no changes'.\n\n"
+        "Tools:\n"
+        "- fm_list_files(path='.', pattern='**/*')\n"
+        "- fm_search_in_files(query, path='.', pattern='**/*.py', is_regex=False)\n"
+        "- fm_read_file(path)\n"
+        "- fm_write_file(path, content) → {path, created, diff}\n"
+        "- fm_patch_file(path, old_string, new_string)\n"
+        "- fm_check_invariants(path='.')\n\n"
+        "Paths are relative to FILE_MANAGER_ROOT. Format search results as: file:line — content\n"
     )
     system_prompt = req.system_prompt or _DEFAULT_SYSTEM_PROMPT
     if _retriever is not None:
@@ -341,9 +348,15 @@ async def chat(req: ChatRequest, client_ip: str = Depends(get_client_ip)):
             chunks = _retriever.search(req.message, top_k=3)
             if chunks:
                 rag_text = "\n---\n".join(c.text for c in chunks)
-                system_prompt += f"\n\nКонтекст из базы знаний:\n{rag_text}"
+                system_prompt += f"\n\n[Справочный контекст — только для общих вопросов, НЕ для анализа файлов]\n{rag_text}"
         except Exception as e:
             print(f"[RAG] retrieval error: {e}")
+    # Mandatory tool-use reminder placed last so it overrides RAG context recency
+    system_prompt += (
+        "\n\n[ОБЯЗАТЕЛЬНО] Для любой задачи генерации/создания файла: "
+        "вызови fm_search_in_files ДО fm_write_file. "
+        "Содержимое файла должно основываться ТОЛЬКО на результатах инструментов, не на памяти."
+    )
 
     # LLM call (synchronous client → offload to thread pool)
     config = SessionConfig(

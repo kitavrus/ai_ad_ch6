@@ -15,6 +15,25 @@ SUPPORT_SYSTEM_PROMPT = """Ты — AI-ассистент технической
 
 Отвечай на русском языке, кратко и по существу."""
 
+# Keywords that indicate a "generate file from analysis" request.
+# For these requests fm_search_in_files must be called before fm_write_file.
+_GENERATE_KEYWORDS = {
+    "сгенерируй", "сгенерировать", "генерируй", "генерировать",
+    "создай на основе", "создать на основе",
+    "changelog", "readme",
+    "на основе анализа", "анализ проекта",
+    "отчёт", "report",
+}
+
+
+def _is_generate_request(messages: list[dict]) -> bool:
+    """Return True if the last user message requests file generation from analysis."""
+    for msg in reversed(messages):
+        if msg.get("role") == "user":
+            content = msg.get("content", "").lower()
+            return any(kw in content for kw in _GENERATE_KEYWORDS)
+    return False
+
 
 async def run_with_tools(client, mcp, messages: list[dict], max_rounds: int = MAX_TOOL_ROUNDS) -> str:
     """Цикл запрос → tool_calls → результаты → повтор до текстового ответа.
@@ -22,6 +41,8 @@ async def run_with_tools(client, mcp, messages: list[dict], max_rounds: int = MA
     Переиспользуется в script.py (REPL) и support_server.py (FastAPI).
     """
     loop_messages = list(messages)
+    search_required = _is_generate_request(messages)
+    search_done = False
 
     for _ in range(max_rounds):
         message = client.chat_raw(loop_messages, tools=mcp.tools_openai or None)
@@ -49,9 +70,23 @@ async def run_with_tools(client, mcp, messages: list[dict], max_rounds: int = MA
             except json.JSONDecodeError:
                 arguments = {}
 
-            print(f"  [Tool] {tool_name}({arguments})")
-            result = await mcp.call_tool(tool_name, arguments)
-            print(f"  [Tool] ← {result[:120]}{'...' if len(result) > 120 else ''}")
+            if tool_name == "fm_search_in_files":
+                search_done = True
+
+            # Guard: for generate requests, block fm_write_file until fm_search_in_files is called
+            if tool_name == "fm_write_file" and search_required and not search_done:
+                result = json.dumps({
+                    "error": (
+                        "You must call fm_search_in_files at least once before fm_write_file "
+                        "when generating a file from project analysis. "
+                        "Call fm_search_in_files(query='@mcp.tool()', pattern='**/*.py') first."
+                    )
+                })
+                print(f"  [Guard] blocked fm_write_file — fm_search_in_files not yet called")
+            else:
+                print(f"  [Tool] {tool_name}({arguments})")
+                result = await mcp.call_tool(tool_name, arguments)
+                print(f"  [Tool] ← {result[:120]}{'...' if len(result) > 120 else ''}")
 
             loop_messages.append({
                 "role": "tool",
